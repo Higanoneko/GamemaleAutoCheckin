@@ -218,6 +218,57 @@ class GamemaleAutomation:
                 print(f"请求失败: {url}, 错误: {e}")
             raise
 
+    def _extract_cookies_string(self):
+        """从当前 session 提取 cookie 字符串"""
+        cookies = []
+        for cookie in self.session.cookies:
+            if cookie.domain and 'gamemale.com' in cookie.domain:
+                cookies.append(f"{cookie.name}={cookie.value}")
+        return '; '.join(cookies)
+
+    def _save_cookie_to_config(self):
+        """将当前 session 的 cookie 保存到配置文件"""
+        try:
+            # 检查配置来源
+            config_json_str = os.environ.get("APP_CONFIG_JSON")
+            if config_json_str:
+                # 配置来自环境变量，无法自动保存
+                new_cookie = self._extract_cookies_string()
+                if new_cookie:
+                    print("::notice::密码登录成功，新 Cookie 已生成。")
+                    print(f"::notice::由于配置来自环境变量，请手动更新 Cookie: {new_cookie[:50]}...")
+                return False
+
+            config_path = "config.json"
+            if not os.path.exists(config_path):
+                print("::warning::配置文件不存在，无法保存 Cookie")
+                return False
+
+            # 读取当前配置
+            with open(config_path, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+
+            # 提取并更新 cookie
+            new_cookie = self._extract_cookies_string()
+            if not new_cookie:
+                print("::warning::未能提取到有效的 Cookie")
+                return False
+
+            if "gamemale" not in config:
+                config["gamemale"] = {}
+            config["gamemale"]["cookie"] = new_cookie
+
+            # 写回配置文件
+            with open(config_path, 'w', encoding='utf-8') as f:
+                json.dump(config, f, ensure_ascii=False, indent=4)
+
+            print("✅ Cookie 已自动更新到配置文件")
+            return True
+
+        except Exception as e:
+            print(f"::warning::保存 Cookie 失败: {e}")
+            return False
+
     def login(self):
         """统一的登录管理"""
         print("::group::登录流程")
@@ -229,7 +280,9 @@ class GamemaleAutomation:
                 login_successful = True
         
         if not login_successful and self._login_with_password():
-            print("✅ 密码登录成功") 
+            print("✅ 密码登录成功")
+            # 密码登录成功后自动保存 Cookie 到配置文件
+            self._save_cookie_to_config()
             login_successful = True
         
         if login_successful:
@@ -286,7 +339,11 @@ class GamemaleAutomation:
             
             try:
                 loginhash, formhash, seccodehash, seccode_verify = self._get_login_parameters()
-                
+
+                # 检测是否已经登录
+                if loginhash == "ALREADY_LOGGED_IN":
+                    return True
+
                 if not all([loginhash, formhash, seccodehash, seccode_verify]):
                     raise ValueError("获取登录参数失败")
 
@@ -325,14 +382,18 @@ class GamemaleAutomation:
         
         html_content_match = re.search(r'<!\[CDATA\[(.*)\]\]>', response.text, re.DOTALL)
         if not html_content_match:
-            # 增加日志，帮助调试
             print("::warning::在 _get_login_parameters 中未能从响应中提取到 CDATA 内容。")
             print(f"::debug::响应文本预览: {response.text[:500]}")
             raise ValueError("无法从登录弹窗响应中提取HTML内容。")
         html_content = html_content_match.group(1)
 
+        # 检测是否已经登录成功（服务器返回欢迎消息而非登录表单）
+        if '欢迎您回来' in html_content or 'succeedhandle_login' in html_content:
+            print("检测到已登录状态，无需重新登录")
+            return "ALREADY_LOGGED_IN", None, None, None
+
         soup = BeautifulSoup(html_content, 'html.parser')
-        
+
         action_tag = soup.find('form', {'name': 'login'})
         if not action_tag or not action_tag.has_attr('action'):
              raise ValueError("未找到登录表单的action URL。")
