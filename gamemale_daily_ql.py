@@ -1,15 +1,14 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+# 青龙面板任务配置
+# new Env('GameMale 自动签到')
+# cron 0 8 * * *
 """
 Gamemale 每日任务自动化脚本 - 青龙面板适配版
 支持多账户运行
 
-配置方式（按优先级）:
-    1. 青龙面板配置文件: 在青龙面板"配置文件"选项卡中编辑 gamemale.json
-    2. 环境变量 GAMEMALE_ACCOUNTS: JSON数组格式
-    3. 环境变量 GAMEMALE_COOKIE: 简单Cookie格式
-
-首次运行会自动在青龙配置目录创建 gamemale.json 模板文件
+配置方式：在青龙面板「配置文件」中编辑 GameMale_Config.json
+首次运行会自动创建配置文件模板
 """
 
 import requests
@@ -62,7 +61,7 @@ def log_section(title, account_name=""):
 
 
 # ============== 配置文件路径 ==============
-CONFIG_FILE_NAME = "gamemale.json"
+CONFIG_FILE_NAME = "GameMale_Config.json"
 
 # 青龙面板可能的配置目录
 QL_CONFIG_PATHS = [
@@ -72,48 +71,16 @@ QL_CONFIG_PATHS = [
 ]
 
 # 配置文件模板
-CONFIG_TEMPLATE = '''{
-    // Gamemale 每日任务配置文件
-    // 请在青龙面板的"配置文件"选项卡中编辑此文件
-    //
-    // 配置说明:
-    //   accounts: 账户列表，支持多账户
-    //   每个账户包含:
-    //     - cookie: 登录Cookie（推荐，稳定）
-    //     - username: 用户名（用于显示和密码登录）
-    //     - password: 密码（用于Cookie失效时自动登录和血液兑换）
-    //     - questionid: 安全问题ID（可选，默认"0"表示无安全问题）
-    //     - answer: 安全问题答案（可选）
-    //     - auto_exchange_enabled: 是否自动兑换血液为旅程（可选，默认true）
-    //
-    // Cookie获取方法:
-    //   1. 浏览器登录 www.gamemale.com
-    //   2. F12 打开开发者工具 -> Network(网络) 标签
-    //   3. 刷新页面，点击任意请求
-    //   4. 在 Headers(请求头) 中找到 Cookie 字段，复制完整值
-
+CONFIG_TEMPLATE = """{
     "accounts": [
         {
-            "cookie": "在此粘贴你的Cookie",
-            "username": "你的用户名",
-            "password": "你的密码",
-            "questionid": "0",
-            "answer": "",
-            "auto_exchange_enabled": true
+            "cookie": "",
+            "username": "",
+            "password": ""
         }
-
-        // 如需添加更多账户，取消下面的注释并填写
-        // ,{
-        //     "cookie": "第二个账户的Cookie",
-        //     "username": "第二个用户名",
-        //     "password": "第二个密码",
-        //     "questionid": "0",
-        //     "answer": "",
-        //     "auto_exchange_enabled": true
-        // }
     ]
 }
-'''
+"""
 
 
 def get_ql_config_dir():
@@ -156,21 +123,8 @@ def load_config_file():
 
     try:
         with open(config_path, 'r', encoding='utf-8') as f:
-            content = f.read()
+            config = json.load(f)
 
-        # 移除 JSON 中的注释（// 开头的行）
-        lines = content.split('\n')
-        clean_lines = []
-        for line in lines:
-            stripped = line.strip()
-            if not stripped.startswith('//'):
-                # 移除行内注释
-                if '//' in line and '"' not in line.split('//')[0].split(':')[-1]:
-                    line = line.split('//')[0]
-                clean_lines.append(line)
-        clean_content = '\n'.join(clean_lines)
-
-        config = json.loads(clean_content)
         accounts = config.get("accounts", [])
 
         if accounts:
@@ -192,7 +146,7 @@ def load_accounts():
     """
     加载账户配置
     优先级:
-    1. 青龙配置文件 gamemale.json
+    1. 青龙配置文件 GameMale_Config.json
     2. 环境变量 GAMEMALE_ACCOUNTS
     3. 环境变量 GAMEMALE_COOKIE
     """
@@ -917,33 +871,14 @@ def main():
         config_path = get_config_file_path()
 
         if create_config_template():
-            print("\n" + "=" * 60)
-            print("首次运行 - 已自动创建配置文件!")
-            print("=" * 60)
-            print(f"\n配置文件位置: {config_path}")
-            print("\n请按以下步骤操作:")
-            print("  1. 打开青龙面板")
-            print("  2. 点击左侧菜单「配置文件」")
-            print("  3. 在文件列表中找到 gamemale.json")
-            print("  4. 点击编辑，填写你的账户信息")
-            print("  5. 保存后重新运行此任务")
-            print("\n配置示例:")
-            print('  {')
-            print('    "accounts": [')
-            print('      {')
-            print('        "cookie": "你的Cookie...",')
-            print('        "username": "你的用户名",')
-            print('        "password": "你的密码"')
-            print('      }')
-            print('    ]')
-            print('  }')
-            print("\n" + "=" * 60)
+            print(f"\n首次运行，已创建配置文件: {config_path}")
+            print("\n请在青龙面板「配置文件」中编辑 GameMale_Config.json，填写账户信息后重新运行")
+            print("\n配置说明:")
+            print("  cookie   - 登录Cookie（从浏览器F12获取）")
+            print("  username - 用户名")
+            print("  password - 密码（用于自动登录和血液兑换）")
         else:
-            print("\n错误: 未找到任何账户配置")
-            print("\n你可以通过以下方式配置:")
-            print(f"  1. 在青龙配置目录创建 {CONFIG_FILE_NAME}")
-            print("  2. 设置环境变量 GAMEMALE_ACCOUNTS")
-            print("  3. 设置环境变量 GAMEMALE_COOKIE")
+            print("\n错误: 未找到配置，请在青龙配置目录创建 GameMale_Config.json")
 
         sys.exit(1)
 
