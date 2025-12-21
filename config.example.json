@@ -1,0 +1,29 @@
+{
+  "gamemale": {
+    "cookie": "TVj0_2132_nofavfid=1; TVj0_2132_smile=1D1; ...",
+    "username": "your_username",
+    "password": "your_password",
+    "questionid": "0",
+    "answer": "",
+    "auto_exchange_enabled": true
+  },
+  "notification": {
+    "enabled": true,
+    "type": "console",
+    "telegram": {
+      "bot_token": "",
+      "chat_id": ""
+    },
+    "wechat": {
+      "webhook": ""
+    },
+    "email": {
+      "smtp_server": "smtp.example.com",
+      "smtp_port": 587,
+      "username": "your_email@example.com",
+      "password": "your_email_password",
+      "from": "sender@example.com",
+      "to": "recipient@example.com"
+    }
+  }
+}

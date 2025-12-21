@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(del \"d:\\\\Projects\\\\GameMale\\\\GamemaleAutoLogin-main\\\\ql_config.example.json\")"
+    ]
+  }
+}

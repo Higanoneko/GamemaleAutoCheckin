@@ -1,0 +1,36 @@
+name: Gamemale Daily Tasks
+
+on:
+  schedule:
+    # 使用 Cron 表达式，在北京时间每天0点运行
+    # UTC时间是 16:00 (前一天)，北京时间 (UTC+8) 就是 00:00
+    - cron: '0 16 * * *'
+  workflow_dispatch:
+    # 添加这个可以让你在 GitHub Actions 页面手动触发脚本
+
+jobs:
+  run-script:
+    runs-on: ubuntu-latest # 使用最新的Ubuntu运行环境
+
+    steps:
+    - name: Checkout repository
+      # 1. 检出你的代码
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      # 2. 设置Python环境
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10' # 指定一个Python版本
+
+    - name: Install dependencies
+      # 3. 安装脚本所需的库
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt # 从 requirements.txt 安装
+
+    - name: Run daily script
+      # 4. 运行你的Python脚本
+      env:
+        APP_CONFIG_JSON: ${{ secrets.APP_CONFIG_JSON }}
+      run: python gamemale_daily.py # 运行主脚本
