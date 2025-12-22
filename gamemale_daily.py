@@ -347,38 +347,45 @@ class GamemaleAutomation:
                 # 配置来自环境变量，无法自动保存
                 new_cookie = self._extract_cookies_string()
                 if new_cookie:
-                    print("::notice::密码登录成功，新 Cookie 已生成。")
-                    print(f"::notice::由于配置来自环境变量，请手动更新 Cookie: {new_cookie[:50]}...")
+                    print("密码登录成功，新 Cookie 已生成。")
+                    print(f"由于配置来自环境变量，请手动更新 Cookie: {new_cookie[:50]}...")
                 return False
 
-            config_path = "config.json"
-            if not os.path.exists(config_path):
-                print("::warning::配置文件不存在，无法保存 Cookie")
-                return False
+            # 优先尝试 YAML 配置文件
+            config_path = get_config_file_path()
+            if config_path.exists() and YAML_AVAILABLE:
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    config = yaml.safe_load(f)
 
-            # 读取当前配置
-            with open(config_path, 'r', encoding='utf-8') as f:
-                config = json.load(f)
+                if not config:
+                    print("配置文件为空，无法保存 Cookie")
+                    return False
 
-            # 提取并更新 cookie
-            new_cookie = self._extract_cookies_string()
-            if not new_cookie:
-                print("::warning::未能提取到有效的 Cookie")
-                return False
+                accounts = config.get("accounts", [])
+                if self.account_index >= len(accounts):
+                    print("账户索引超出范围，无法保存 Cookie")
+                    return False
 
-            if "gamemale" not in config:
-                config["gamemale"] = {}
-            config["gamemale"]["cookie"] = new_cookie
+                new_cookie = self._extract_cookies_string()
+                if not new_cookie:
+                    print("未能提取到有效的 Cookie")
+                    return False
 
-            # 写回配置文件
-            with open(config_path, 'w', encoding='utf-8') as f:
-                json.dump(config, f, ensure_ascii=False, indent=4)
+                accounts[self.account_index]["cookie"] = new_cookie
+                config["accounts"] = accounts
 
-            print("✅ Cookie 已自动更新到配置文件")
-            return True
+                with open(config_path, 'w', encoding='utf-8') as f:
+                    yaml.dump(config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+
+                print("✅ Cookie 已自动更新到配置文件")
+                return True
+
+            # 如果 YAML 不可用，提示用户
+            print("无法自动保存 Cookie（YAML 配置不可用）")
+            return False
 
         except Exception as e:
-            print(f"::warning::保存 Cookie 失败: {e}")
+            print(f"保存 Cookie 失败: {e}")
             return False
 
     def login(self):

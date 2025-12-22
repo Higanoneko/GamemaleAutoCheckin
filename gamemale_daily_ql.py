@@ -18,7 +18,22 @@ import time
 import random
 import os
 import sys
+import signal
 from pathlib import Path
+
+# 全局停止标志
+STOP_REQUESTED = False
+
+def signal_handler(signum, frame):
+    """处理停止信号"""
+    global STOP_REQUESTED
+    STOP_REQUESTED = True
+    print("\n⚠️ 收到停止信号，正在优雅退出...")
+    sys.exit(0)
+
+# 注册信号处理器
+signal.signal(signal.SIGTERM, signal_handler)
+signal.signal(signal.SIGINT, signal_handler)
 
 try:
     import yaml
@@ -390,14 +405,22 @@ class GamemaleAutomation:
     def _save_cookie_to_config(self):
         """将当前 session 的 cookie 保存到配置文件"""
         try:
+            if not YAML_AVAILABLE:
+                log_warning("PyYAML 未安装，无法保存 Cookie 到配置文件", self.account_name)
+                return False
+
             config_path = get_config_file_path()
             if not config_path.exists():
                 log_warning("配置文件不存在，无法保存 Cookie", self.account_name)
                 return False
 
-            # 读取当前配置
+            # 读取当前配置 (YAML格式)
             with open(config_path, 'r', encoding='utf-8') as f:
-                config = json.load(f)
+                config = yaml.safe_load(f)
+
+            if not config:
+                log_warning("配置文件为空，无法保存 Cookie", self.account_name)
+                return False
 
             accounts = config.get("accounts", [])
             if self.account_index >= len(accounts):
@@ -413,9 +436,9 @@ class GamemaleAutomation:
             accounts[self.account_index]["cookie"] = new_cookie
             config["accounts"] = accounts
 
-            # 写回配置文件
+            # 写回配置文件 (YAML格式)
             with open(config_path, 'w', encoding='utf-8') as f:
-                json.dump(config, f, ensure_ascii=False, indent=4)
+                yaml.dump(config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
 
             log_success("Cookie 已自动更新到配置文件", self.account_name)
             return True
