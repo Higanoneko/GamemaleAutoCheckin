@@ -7,36 +7,146 @@ import json
 import time
 import random
 import os
+import sys
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from pathlib import Path
+
+try:
+    import yaml
+    YAML_AVAILABLE = True
+except ImportError:
+    YAML_AVAILABLE = False
+    print("警告: PyYAML 未安装，请运行 pip install pyyaml")
+
+# ============== 配置文件路径 ==============
+CONFIG_FILE_NAME = "config.yaml"
+SCRIPT_DIR = Path(__file__).parent
+
+# 配置文件模板 (YAML格式，支持注释)
+CONFIG_TEMPLATE = """# GameMale 自动签到配置文件
+# 支持多账户，每个账户可以单独配置
+
+accounts:
+  # 账户1
+  - cookie: ""           # 登录Cookie（从浏览器F12获取）
+    username: ""         # 用户名
+    password: ""         # 密码（用于自动登录和血液兑换）
+    notify_enabled: true # 是否发送通知（true/false）
+    auto_exchange_enabled: true  # 是否自动兑换血液
+
+  # 账户2（示例，取消注释并填写信息即可启用）
+  # - cookie: ""
+  #   username: ""
+  #   password: ""
+  #   notify_enabled: false
+  #   auto_exchange_enabled: true
+
+# 通知配置
+notification:
+  enabled: false         # 是否启用通知
+  type: "console"        # 通知类型: console, telegram, wechat, email
+
+  telegram:
+    bot_token: ""
+    chat_id: ""
+
+  wechat:
+    webhook: ""
+
+  email:
+    smtp_server: "smtp.example.com"
+    smtp_port: 587
+    username: ""
+    password: ""
+    from: ""
+    to: ""
+"""
+
+
+def get_config_file_path():
+    """获取配置文件完整路径"""
+    return SCRIPT_DIR / CONFIG_FILE_NAME
+
+
+def create_config_template():
+    """创建配置文件模板"""
+    config_path = get_config_file_path()
+
+    if config_path.exists():
+        return False
+
+    try:
+        with open(config_path, 'w', encoding='utf-8') as f:
+            f.write(CONFIG_TEMPLATE)
+        return True
+    except Exception as e:
+        print(f"创建配置文件失败: {e}")
+        return False
+
 
 # --- 配置加载与通知函数 ---
 def load_config():
     """
     加载配置.
-    优先级: 环境变量 APP_CONFIG_JSON > 本地 config.json 文件.
+    优先级:
+    1. 本地 config.yaml 文件 (YAML格式，推荐)
+    2. 环境变量 APP_CONFIG_JSON
+    3. 本地 config.json 文件 (兼容旧格式)
     """
+    # 1. 优先加载 YAML 配置文件
+    config_path = get_config_file_path()
+    if config_path.exists() and YAML_AVAILABLE:
+        print(f"从 {config_path} 加载配置")
+        try:
+            with open(config_path, 'r', encoding='utf-8') as f:
+                return yaml.safe_load(f)
+        except yaml.YAMLError as e:
+            print(f"配置文件格式错误: {e}")
+            sys.exit(1)
+
+    # 2. 环境变量
     config_json_str = os.environ.get("APP_CONFIG_JSON")
     if config_json_str:
-        print("::notice::从环境变量 APP_CONFIG_JSON 加载配置。")
+        print("从环境变量 APP_CONFIG_JSON 加载配置")
         try:
-            return json.loads(config_json_str)
+            config = json.loads(config_json_str)
+            # 兼容旧格式：将单账户转换为多账户格式
+            if "gamemale" in config and "accounts" not in config:
+                config["accounts"] = [config["gamemale"]]
+            return config
         except json.JSONDecodeError:
-            print("::error::环境变量 APP_CONFIG_JSON 的值不是有效的 JSON。")
-            exit(1)
-    
+            print("环境变量 APP_CONFIG_JSON 的值不是有效的 JSON")
+            sys.exit(1)
+
+    # 3. 兼容旧的 JSON 配置文件
     if os.path.exists("config.json"):
-        print("::notice::从本地 config.json 文件加载配置。")
+        print("从本地 config.json 文件加载配置")
         with open("config.json", "r", encoding="utf-8") as f:
             try:
-                return json.load(f)
+                config = json.load(f)
+                # 兼容旧格式：将单账户转换为多账户格式
+                if "gamemale" in config and "accounts" not in config:
+                    config["accounts"] = [config["gamemale"]]
+                return config
             except json.JSONDecodeError:
-                print("::error::本地 config.json 文件格式无效。")
-                exit(1)
+                print("本地 config.json 文件格式无效")
+                sys.exit(1)
 
-    print("::error::错误：未找到配置。请设置 APP_CONFIG_JSON 环境变量或创建 config.json 文件。")
-    exit(1)
+    # 4. 未找到配置，创建模板
+    if create_config_template():
+        print(f"\n首次运行，已创建配置文件: {config_path}")
+        print("\n请编辑 config.yaml 填写账户信息后重新运行")
+        print("\n配置说明 (YAML格式，支持注释):")
+        print("  cookie         - 登录Cookie（从浏览器F12获取）")
+        print("  username       - 用户名")
+        print("  password       - 密码（用于自动登录和血液兑换）")
+        print("  notify_enabled - 是否发送通知（true/false，默认true）")
+    else:
+        print("错误：未找到配置文件，请创建 config.yaml")
+
+    sys.exit(1)
 
 def send_notification(config, message):
     """发送通知消息"""
@@ -192,14 +302,16 @@ def interact_with_blogs_regex(session, target_interactions=10, max_pages_to_scan
 
 class GamemaleAutomation:
     """Gamemale 自动化任务客户端"""
-    
-    def __init__(self, config):
-        self.config = config
+
+    def __init__(self, account_config, account_index=0):
+        self.config = account_config  # 单个账户配置
+        self.account_index = account_index
+        self.account_name = account_config.get("username", f"账户{account_index+1}")
         self.session = requests.Session()
         self.formhash = None
         self.is_logged_in = False
         self.ocr = ddddocr.DdddOcr(show_ad=False)
-        
+
         self.session.headers.update({
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
             'Referer': 'https://www.gamemale.com/forum.php',
@@ -272,32 +384,35 @@ class GamemaleAutomation:
     def login(self):
         """统一的登录管理"""
         print("::group::登录流程")
-        
+
         login_successful = False
-        if self.config.get("gamemale", {}).get("cookie"):
+        if self.config.get("cookie"):
             if self._login_with_cookie():
                 print("✅ Cookie 登录成功")
                 login_successful = True
-        
+            else:
+                # Cookie登录失败，清除session中的cookies，避免干扰密码登录
+                self.session.cookies.clear()
+                print("Cookie 已过期或无效，尝试密码登录")
+
         if not login_successful and self._login_with_password():
             print("✅ 密码登录成功")
             # 密码登录成功后自动保存 Cookie 到配置文件
             self._save_cookie_to_config()
             login_successful = True
-        
+
         if login_successful:
             self.is_logged_in = True
             self.get_and_store_formhash()
         else:
             print("❌ 所有登录方式均失败")
-        
+
         print("::endgroup::")
         return self.is_logged_in
 
     def _login_with_cookie(self):
-        """使用Cookie尝试登录 (版本B的可靠实现)"""
-        cookie_string = self.config.get("gamemale", {}).get("cookie")
-        username = self.config.get("gamemale", {}).get("username")
+        """使用Cookie尝试登录"""
+        cookie_string = self.config.get("cookie")
         if not cookie_string:
             return False
 
@@ -311,12 +426,13 @@ class GamemaleAutomation:
             test_url = 'https://www.gamemale.com/home.php?mod=space&do=profile'
             response = self.session.get(test_url, allow_redirects=False)
 
-            if response.status_code == 200 and '登录' not in response.text:
-                # 如果提供了用户名，则额外验证用户名是否存在于页面中
-                if username and username.lower() in response.text.lower():
-                    return True
-                # 如果没有提供用户名，则检查通用登录标识
-                elif '我的资料' in response.text:
+            # 只要页面能访问且不需要登录就认为成功
+            if response.status_code == 200:
+                # 检查是否是登录页面或需要登录的提示
+                if '登录' in response.text and '请先登录' in response.text:
+                    return False
+                # 检查是否有用户相关内容（说明已登录）
+                if '我的资料' in response.text or '个人空间' in response.text or 'uid=' in response.text:
                     return True
             return False
         except Exception as e:
@@ -325,9 +441,8 @@ class GamemaleAutomation:
 
     def _login_with_password(self):
         """使用密码进行登录"""
-        gamemale_config = self.config.get("gamemale", {})
-        username = gamemale_config.get("username")
-        password = gamemale_config.get("password")
+        username = self.config.get("username")
+        password = self.config.get("password")
 
         if not all([username, password]):
             print("::warning::密码登录所需信息不完整 (用户名或密码缺失)。")
@@ -354,8 +469,8 @@ class GamemaleAutomation:
                     'loginfield': 'username',
                     'username': username,
                     'password': password,
-                    'questionid': gamemale_config.get("questionid", "0"),
-                    'answer': gamemale_config.get("answer", ""),
+                    'questionid': self.config.get("questionid", "0"),
+                    'answer': self.config.get("answer", ""),
                     'seccodehash': seccodehash,
                     'seccodeverify': seccode_verify
                 }
@@ -685,16 +800,15 @@ class GamemaleAutomation:
             print("首次积分获取成功:", credits_data)
 
             # 2. 检查并执行兑换
-            gamemale_config = self.config.get("gamemale", {})
-            if not gamemale_config.get("auto_exchange_enabled", True):
+            if not self.config.get("auto_exchange_enabled", True):
                 print("ℹ️ 自动兑换功能已禁用，跳过。")
                 return credits_data, None
 
             blood_value_str = credits_data.get("血液", "0 滴").split()[0]
             blood_value = int(blood_value_str)
-            
+
             if blood_value > 34:
-                password = gamemale_config.get("password")
+                password = self.config.get("password")
                 if not password:
                     print(f"ℹ️ 检测到血液 ({blood_value}) > 34，但未配置密码，无法执行兑换。")
                     return credits_data, None
@@ -779,7 +893,7 @@ class GamemaleAutomation:
 
     def generate_detailed_report(self, task_results, user_credits=None, task_summary_data=None):
         """生成详细的统计报告"""
-        message = "🎉 Gamemale 每日任务完成统计\n\n"
+        message = f"【{self.account_name}】 Gamemale 每日任务完成统计\n\n"
         
         if user_credits:
             message += "💳 当前积分:\n"
@@ -809,38 +923,104 @@ class GamemaleAutomation:
         return message
 
 def main():
-    """主程序"""
-    try:
-        config = load_config()
-        
-        gamemale_config = config.get("gamemale", {})
-        if not gamemale_config.get("cookie") and not (gamemale_config.get("username") and gamemale_config.get("password")):
-            print("::error::错误：必须配置 gamemale.cookie 或 (gamemale.username 和 gamemale.password)。")
-            exit(1)
+    """主程序 - 支持多账户"""
+    print("=" * 60)
+    print("Gamemale 每日任务自动化脚本")
+    print("=" * 60)
 
-        client = GamemaleAutomation(config)
-        
-        if not client.login():
-            raise Exception("登录失败")
-        
-        detailed_report = client.execute_all_tasks()
-        
-        if detailed_report:
-            print("🎉 所有任务执行完成！")
-            print("\n" + "="*50)
-            print("详细报告:")
-            print(detailed_report)
-            print("="*50)
-            
-            send_notification(config, detailed_report)
-        else:
-            print("⚠ 任务执行失败或未生成报告。")
-            
-    except Exception as e:
-        error_message = f"❌ 脚本执行失败: {e}"
-        print(error_message)
-        send_notification(config, error_message)
-        exit(1)
+    config = load_config()
+
+    # 获取账户列表
+    accounts = config.get("accounts", [])
+    if not accounts:
+        print("错误：未找到账户配置，请在 config.yaml 中配置 accounts")
+        sys.exit(1)
+
+    print(f"\n共加载 {len(accounts)} 个账户\n")
+
+    all_reports = []
+    success_accounts = 0
+    failed_accounts = 0
+    notify_skipped_accounts = 0
+
+    for i, account_config in enumerate(accounts):
+        account_name = account_config.get("username", f"账户{i+1}")
+        notify_enabled = account_config.get("notify_enabled", True)
+
+        print(f"\n{'#'*60}")
+        print(f"# 开始处理: {account_name} ({i+1}/{len(accounts)})")
+        if not notify_enabled:
+            print(f"# 通知: 已禁用")
+        print(f"{'#'*60}")
+
+        try:
+            # 验证账户配置
+            if not account_config.get("cookie") and not (account_config.get("username") and account_config.get("password")):
+                print(f"❌ [{account_name}] 账户配置无效: 必须提供 cookie 或 (username + password)")
+                failed_accounts += 1
+                continue
+
+            # 创建自动化实例
+            client = GamemaleAutomation(account_config, i)
+
+            # 登录
+            if not client.login():
+                print(f"❌ [{account_name}] 登录失败，跳过此账户")
+                failed_accounts += 1
+                continue
+
+            # 执行任务
+            report = client.execute_all_tasks()
+
+            if report:
+                # 只有启用通知的账户才添加到报告列表
+                if notify_enabled:
+                    all_reports.append(report)
+                else:
+                    notify_skipped_accounts += 1
+                    print(f"ℹ️ [{account_name}] 任务完成，但通知已禁用，不发送结果")
+                success_accounts += 1
+                print(f"✅ [{account_name}] 所有任务执行完成")
+            else:
+                failed_accounts += 1
+                print(f"❌ [{account_name}] 任务执行失败")
+
+        except Exception as e:
+            print(f"❌ [{account_name}] 处理账户时发生异常: {e}")
+            failed_accounts += 1
+
+        # 多账户间延迟
+        if i < len(accounts) - 1:
+            delay = random.uniform(5, 10)
+            print(f"\n等待 {delay:.1f} 秒后处理下一个账户...")
+            time.sleep(delay)
+
+    # 汇总报告
+    print("\n" + "=" * 60)
+    print("执行汇总")
+    print("=" * 60)
+    print(f"成功: {success_accounts} 个账户")
+    print(f"失败: {failed_accounts} 个账户")
+    if notify_skipped_accounts > 0:
+        print(f"通知已禁用: {notify_skipped_accounts} 个账户")
+    print(f"总计: {len(accounts)} 个账户")
+
+    # 发送通知
+    if all_reports:
+        summary_title = f"Gamemale 每日任务 - {success_accounts}/{len(accounts)} 成功"
+        summary_content = "\n".join(all_reports)
+
+        print("\n" + "=" * 60)
+        print("详细报告")
+        print("=" * 60)
+        print(summary_content)
+
+        send_notification(config, summary_content)
+
+    # 如果有失败的账户，以非零状态退出
+    if failed_accounts > 0:
+        sys.exit(1)
+
 
 if __name__ == "__main__":
     main()

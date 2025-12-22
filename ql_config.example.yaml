@@ -1,0 +1,23 @@
+# GameMale 自动签到配置文件
+# 支持多账户，每个账户可以单独配置
+
+accounts:
+  # 账户1 - 启用通知
+  - cookie: "TVj0_2132_nofavfid=1; TVj0_2132_smile=1D1; ..."
+    username: "用户1"
+    password: "密码1"
+    auto_exchange_enabled: true  # 是否自动兑换血液
+    notify_enabled: true         # 发送通知
+
+  # 账户2 - 禁用通知（任务正常执行，但不会在通知中显示结果）
+  - cookie: ""
+    username: "用户2"
+    password: "密码2"
+    auto_exchange_enabled: true
+    notify_enabled: false        # 不发送通知
+
+  # 更多账户...
+  # - cookie: ""
+  #   username: "用户3"
+  #   password: "密码3"
+  #   notify_enabled: true

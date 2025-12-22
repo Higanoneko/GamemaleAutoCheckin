@@ -7,7 +7,7 @@
 Gamemale 每日任务自动化脚本 - 青龙面板适配版
 支持多账户运行
 
-配置方式：在青龙面板「配置文件」中编辑 GameMale_Config.json
+配置方式：在青龙面板「配置文件」中编辑 GameMale_Config.yaml
 首次运行会自动创建配置文件模板
 """
 
@@ -20,12 +20,23 @@ import os
 import sys
 from pathlib import Path
 
+try:
+    import yaml
+    YAML_AVAILABLE = True
+except ImportError:
+    YAML_AVAILABLE = False
+    print("警告: PyYAML 未安装，请在青龙面板依赖管理中添加 pyyaml")
+
 # 尝试导入青龙面板通知模块
 try:
-    from sendNotify import send
+    from notify import send as ql_send
     QL_NOTIFY_AVAILABLE = True
 except ImportError:
-    QL_NOTIFY_AVAILABLE = False
+    try:
+        from sendNotify import send as ql_send
+        QL_NOTIFY_AVAILABLE = True
+    except ImportError:
+        QL_NOTIFY_AVAILABLE = False
 
 # 尝试导入ddddocr（验证码识别）
 try:
@@ -61,7 +72,7 @@ def log_section(title, account_name=""):
 
 
 # ============== 配置文件路径 ==============
-CONFIG_FILE_NAME = "GameMale_Config.json"
+CONFIG_FILE_NAME = "GameMale_Config.yaml"
 
 # 青龙面板可能的配置目录
 QL_CONFIG_PATHS = [
@@ -70,16 +81,22 @@ QL_CONFIG_PATHS = [
     Path(__file__).parent,  # 脚本所在目录
 ]
 
-# 配置文件模板
-CONFIG_TEMPLATE = """{
-    "accounts": [
-        {
-            "cookie": "",
-            "username": "",
-            "password": ""
-        }
-    ]
-}
+# 配置文件模板 (YAML格式，支持注释)
+CONFIG_TEMPLATE = """# GameMale 自动签到配置文件
+# 支持多账户，每个账户可以单独配置
+
+accounts:
+  # 账户1
+  - cookie: ""           # 登录Cookie（从浏览器F12获取）
+    username: ""         # 用户名
+    password: ""         # 密码（用于自动登录和血液兑换）
+    notify_enabled: true # 是否发送通知（true/false）
+
+  # 账户2（示例，取消注释并填写信息即可启用）
+  # - cookie: ""
+  #   username: ""
+  #   password: ""
+  #   notify_enabled: false
 """
 
 
@@ -116,6 +133,10 @@ def create_config_template():
 
 def load_config_file():
     """从配置文件加载账户"""
+    if not YAML_AVAILABLE:
+        print("错误: PyYAML 未安装，无法加载配置文件")
+        return None
+
     config_path = get_config_file_path()
 
     if not config_path.exists():
@@ -123,7 +144,10 @@ def load_config_file():
 
     try:
         with open(config_path, 'r', encoding='utf-8') as f:
-            config = json.load(f)
+            config = yaml.safe_load(f)
+
+        if not config:
+            return None
 
         accounts = config.get("accounts", [])
 
@@ -132,7 +156,7 @@ def load_config_file():
             return accounts
         return None
 
-    except json.JSONDecodeError as e:
+    except yaml.YAMLError as e:
         print(f"配置文件格式错误: {e}")
         print(f"请检查配置文件: {config_path}")
         return None
@@ -215,7 +239,7 @@ def send_notification(title, content):
     """发送通知，优先使用青龙面板通知"""
     if QL_NOTIFY_AVAILABLE:
         try:
-            send(title, content)
+            ql_send(title, content)
             print("青龙面板通知发送成功")
         except Exception as e:
             print(f"青龙面板通知发送失败: {e}")
@@ -411,6 +435,10 @@ class GamemaleAutomation:
             if self._login_with_cookie():
                 log_success("Cookie 登录成功", self.account_name)
                 login_successful = True
+            else:
+                # Cookie登录失败，清除session中的cookies，避免干扰密码登录
+                self.session.cookies.clear()
+                log_info("Cookie 已过期或无效，尝试密码登录", self.account_name)
 
         # Cookie登录失败则尝试密码登录
         if not login_successful and self.config.get("username") and self.config.get("password"):
@@ -431,7 +459,6 @@ class GamemaleAutomation:
     def _login_with_cookie(self):
         """使用Cookie尝试登录"""
         cookie_string = self.config.get("cookie")
-        username = self.config.get("username")
         if not cookie_string:
             return False
 
@@ -445,10 +472,13 @@ class GamemaleAutomation:
             test_url = 'https://www.gamemale.com/home.php?mod=space&do=profile'
             response = self.session.get(test_url, allow_redirects=False)
 
-            if response.status_code == 200 and '登录' not in response.text:
-                if username and username.lower() in response.text.lower():
-                    return True
-                elif '我的资料' in response.text:
+            # 只要页面能访问且不需要登录就认为成功
+            if response.status_code == 200:
+                # 检查是否是登录页面或需要登录的提示
+                if '登录' in response.text and '请先登录' in response.text:
+                    return False
+                # 检查是否有用户相关内容（说明已登录）
+                if '我的资料' in response.text or '个人空间' in response.text or 'uid=' in response.text:
                     return True
             return False
         except Exception as e:
@@ -930,13 +960,14 @@ def main():
 
         if create_config_template():
             print(f"\n首次运行，已创建配置文件: {config_path}")
-            print("\n请在青龙面板「配置文件」中编辑 GameMale_Config.json，填写账户信息后重新运行")
-            print("\n配置说明:")
-            print("  cookie   - 登录Cookie（从浏览器F12获取）")
-            print("  username - 用户名")
-            print("  password - 密码（用于自动登录和血液兑换）")
+            print("\n请在青龙面板「配置文件」中编辑 GameMale_Config.yaml，填写账户信息后重新运行")
+            print("\n配置说明 (YAML格式，支持注释):")
+            print("  cookie         - 登录Cookie（从浏览器F12获取）")
+            print("  username       - 用户名")
+            print("  password       - 密码（用于自动登录和血液兑换）")
+            print("  notify_enabled - 是否发送通知（true/false，默认true）")
         else:
-            print("\n错误: 未找到配置，请在青龙配置目录创建 GameMale_Config.json")
+            print("\n错误: 未找到配置，请在青龙配置目录创建 GameMale_Config.yaml")
 
         sys.exit(1)
 
@@ -945,11 +976,16 @@ def main():
     all_reports = []
     success_accounts = 0
     failed_accounts = 0
+    notify_skipped_accounts = 0  # 跳过通知的账户数
 
     for i, account_config in enumerate(accounts):
         account_name = account_config.get("username", f"账户{i+1}")
+        notify_enabled = account_config.get("notify_enabled", True)  # 默认启用通知
+
         print(f"\n{'#'*60}")
         print(f"# 开始处理: {account_name} ({i+1}/{len(accounts)})")
+        if not notify_enabled:
+            print(f"# 通知: 已禁用")
         print(f"{'#'*60}")
 
         try:
@@ -972,7 +1008,12 @@ def main():
             report = client.execute_all_tasks()
 
             if report:
-                all_reports.append(report)
+                # 只有启用通知的账户才添加到报告列表
+                if notify_enabled:
+                    all_reports.append(report)
+                else:
+                    notify_skipped_accounts += 1
+                    log_info("任务完成，但通知已禁用，不发送结果", account_name)
                 success_accounts += 1
                 log_success("所有任务执行完成", account_name)
             else:
@@ -995,10 +1036,13 @@ def main():
     print("=" * 60)
     print(f"成功: {success_accounts} 个账户")
     print(f"失败: {failed_accounts} 个账户")
+    if notify_skipped_accounts > 0:
+        print(f"通知已禁用: {notify_skipped_accounts} 个账户")
     print(f"总计: {len(accounts)} 个账户")
 
     # 发送通知
     if all_reports:
+        # 通知标题显示实际成功的账户数
         summary_title = f"Gamemale 每日任务 - {success_accounts}/{len(accounts)} 成功"
         summary_content = "\n".join(all_reports)
 
