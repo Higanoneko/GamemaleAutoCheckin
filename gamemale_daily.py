@@ -34,14 +34,14 @@ accounts:
     username: ""         # 用户名
     password: ""         # 密码（用于自动登录和血液兑换）
     notify_enabled: true # 是否发送通知（true/false）
-    auto_exchange_enabled: true  # 是否自动兑换血液
+    auto_exchange: true  # 是否自动兑换血液为旅程（true/false）
 
   # 账户2（示例，取消注释并填写信息即可启用）
   # - cookie: ""
   #   username: ""
   #   password: ""
   #   notify_enabled: false
-  #   auto_exchange_enabled: true
+  #   auto_exchange: true
 
 # 通知配置
 notification:
@@ -807,7 +807,7 @@ class GamemaleAutomation:
             print("首次积分获取成功:", credits_data)
 
             # 2. 检查并执行兑换
-            if not self.config.get("auto_exchange_enabled", True):
+            if not self.config.get("auto_exchange", True):
                 print("ℹ️ 自动兑换功能已禁用，跳过。")
                 return credits_data, None
 

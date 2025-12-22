@@ -6,18 +6,19 @@ accounts:
   - cookie: "TVj0_2132_nofavfid=1; TVj0_2132_smile=1D1; ..."
     username: "用户1"
     password: "密码1"
-    auto_exchange_enabled: true  # 是否自动兑换血液
+    auto_exchange: true  # 是否自动兑换血液为旅程
     notify_enabled: true         # 发送通知
 
   # 账户2 - 禁用通知（任务正常执行，但不会在通知中显示结果）
   - cookie: ""
     username: "用户2"
     password: "密码2"
-    auto_exchange_enabled: true
+    auto_exchange: true
     notify_enabled: false        # 不发送通知
 
   # 更多账户...
   # - cookie: ""
   #   username: "用户3"
   #   password: "密码3"
+  #   auto_exchange: true
   #   notify_enabled: true

@@ -106,12 +106,14 @@ accounts:
     username: ""         # 用户名
     password: ""         # 密码（用于自动登录和血液兑换）
     notify_enabled: true # 是否发送通知（true/false）
+    auto_exchange: true  # 是否自动兑换血液为旅程（true/false）
 
   # 账户2（示例，取消注释并填写信息即可启用）
   # - cookie: ""
   #   username: ""
   #   password: ""
   #   notify_enabled: false
+  #   auto_exchange: true
 """
 
 
@@ -228,7 +230,7 @@ def load_accounts():
                 "cookie": cookie,
                 "username": f"账户{i+1}",
                 "password": "",
-                "auto_exchange_enabled": True
+                "auto_exchange": True
             })
         print(f"从环境变量 GAMEMALE_COOKIE 加载了 {len(accounts)} 个账户")
         return accounts
@@ -269,6 +271,7 @@ def send_notification(title, content):
 # ============== 日志互动功能 ==============
 def interact_with_blogs_regex(session, account_name, target_interactions=10, max_pages_to_scan=10):
     """持续查找并与日志互动，直到达到目标次数"""
+    global STOP_REQUESTED
     log_section(f"日志互动 (目标: {target_interactions}次)", account_name)
 
     successful_user_ids = set()
@@ -277,6 +280,10 @@ def interact_with_blogs_regex(session, account_name, target_interactions=10, max
 
     page_num = 1
     while len(successful_user_ids) < target_interactions and page_num <= max_pages_to_scan:
+        # 检查停止信号
+        if STOP_REQUESTED:
+            log_warning("收到停止信号，中断日志互动", account_name)
+            break
         log_info(f"扫描第 {page_num}/{max_pages_to_scan} 页...", account_name)
 
         try:
@@ -292,6 +299,11 @@ def interact_with_blogs_regex(session, account_name, target_interactions=10, max
 
             new_blogs_found_on_page = 0
             for href in href_matches:
+                # 检查停止信号
+                if STOP_REQUESTED:
+                    log_warning("收到停止信号，中断日志互动", account_name)
+                    break
+
                 full_url = href if href.startswith('http') else "https://www.gamemale.com/" + href
                 if full_url in processed_blog_urls:
                     continue
@@ -331,6 +343,10 @@ def interact_with_blogs_regex(session, account_name, target_interactions=10, max
                         log_success(f"震惊成功 (UID:{uid}) [{len(successful_user_ids)+1}/{target_interactions}]", account_name)
                         successful_user_ids.add(uid)
 
+                    # 检查停止信号
+                    if STOP_REQUESTED:
+                        break
+
                     time.sleep(random.uniform(2, 5))
 
                     if len(successful_user_ids) >= target_interactions:
@@ -340,6 +356,10 @@ def interact_with_blogs_regex(session, account_name, target_interactions=10, max
                     pass
 
             if len(successful_user_ids) >= target_interactions:
+                break
+
+            # 检查停止信号
+            if STOP_REQUESTED:
                 break
 
             if new_blogs_found_on_page == 0:
@@ -861,7 +881,7 @@ class GamemaleAutomation:
             credits_data, credit_page_url = self._get_credits()
             log_info(f"当前积分: {credits_data}", self.account_name)
 
-            if not self.config.get("auto_exchange_enabled", True):
+            if not self.config.get("auto_exchange", True):
                 log_info("自动兑换功能已禁用", self.account_name)
                 return credits_data, None
 
@@ -1002,6 +1022,11 @@ def main():
     notify_skipped_accounts = 0  # 跳过通知的账户数
 
     for i, account_config in enumerate(accounts):
+        # 检查停止信号
+        if STOP_REQUESTED:
+            log_warning("收到停止信号，停止处理后续账户")
+            break
+
         account_name = account_config.get("username", f"账户{i+1}")
         notify_enabled = account_config.get("notify_enabled", True)  # 默认启用通知
 
@@ -1048,7 +1073,7 @@ def main():
             failed_accounts += 1
 
         # 多账户间延迟
-        if i < len(accounts) - 1:
+        if i < len(accounts) - 1 and not STOP_REQUESTED:
             delay = random.uniform(5, 10)
             print(f"\n等待 {delay:.1f} 秒后处理下一个账户...")
             time.sleep(delay)
