@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 # 青龙面板任务配置
 # new Env('GameMale 自动签到')
-# cron 0 8 * * *
+# cron 0 8 * * * gamemale_daily_ql.py
 """
 Gamemale 每日任务自动化脚本 - 青龙面板适配版
 支持多账户运行

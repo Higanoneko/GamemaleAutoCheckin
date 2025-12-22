@@ -1,7 +1,7 @@
 #!/bin/bash
 # 青龙面板任务配置
 # new Env('GameMale 签到终止器')
-# cron 0 8 * * *
+# cron 0 8 * * * gamemale_stop.sh
 
 # GameMale 签到任务终止脚本
 # 用于优雅地停止正在运行的签到任务
