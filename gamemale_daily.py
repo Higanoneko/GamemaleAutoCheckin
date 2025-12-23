@@ -793,7 +793,9 @@ class GamemaleAutomation:
             match = re.match(r'(.+?):\s*([\d,]+\s*\S+)', text)
             if match:
                 name, value = match.groups()
-                credits_data[name.strip()] = value.strip()
+                # 清理值中多余的括号
+                value = re.sub(r'\s*[\(\)]+\s*$', '', value.strip())
+                credits_data[name.strip()] = value
         return credits_data, credit_page_url
 
     def get_user_credits_and_exchange(self):
