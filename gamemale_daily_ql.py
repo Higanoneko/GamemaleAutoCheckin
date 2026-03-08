@@ -19,7 +19,7 @@ import random
 from pathlib import Path
 
 # 核心模块
-from gamemale_core import (
+from modules.gamemale_core import (
     GamemaleAutomation,
     interact_with_blogs,
     stop_controller,

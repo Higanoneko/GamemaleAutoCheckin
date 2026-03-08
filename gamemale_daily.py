@@ -17,7 +17,7 @@ from pathlib import Path
 import requests
 
 # 核心模块
-from gamemale_core import (
+from modules.gamemale_core import (
     GamemaleAutomation,
     interact_with_blogs,
     log_info,
