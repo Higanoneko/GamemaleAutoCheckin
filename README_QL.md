@@ -5,6 +5,7 @@
 - 支持多账户运行
 - 自动签到、抽奖、日志互动、空间访问、打招呼
 - 自动检查并接取新任务，支持排除指定任务；已接取任务完成后自动领取奖励
+- 可配置挂机总时长和刷新间隔，定时刷新论坛页面累计在线时间
 - 自动血液兑换旅程
 - 集成青龙面板通知系统
 - 支持 Cookie 登录和密码登录
@@ -35,6 +36,18 @@ ddddocr
 - **名称**：Gamemale每日任务
 - **命令**：`task gamemale_daily_ql.py`
 - **定时规则**：`0 8 * * *`
+
+如需某次任务启用挂机刷新，可在命令后追加参数：
+
+```
+task gamemale_daily_ql.py --enable-online --online-time-minutes 30 --online-refresh-interval-seconds 900
+```
+
+如只想执行挂机刷新，不执行签到、抽奖等其它任务：
+
+```
+task gamemale_daily_ql.py --only-online --online-time-minutes 30
+```
 
 **首次运行会自动在配置目录创建 `gamemale.json` 模板文件！**
 
@@ -69,6 +82,8 @@ ddddocr
             "auto_exchange_enabled": true,
             "auto_accept_tasks": true,
             "auto_complete_tasks": true,
+            "online_time_minutes": 0,
+            "online_refresh_interval_seconds": 900,
             "task_exclude_ids": [],
             "task_exclude_names": [],
             "task_exclude_keywords": []
@@ -113,11 +128,23 @@ ddddocr
 | `auto_exchange_enabled` | 否 | 是否自动兑换血液为旅程，默认 `true` |
 | `auto_accept_tasks` | 否 | 是否自动接取“新任务”页面中的可接任务，默认 `true` |
 | `auto_complete_tasks` | 否 | 是否自动领取已完成的进行中任务奖励，默认 `true` |
+| `online_time_minutes` | 否 | 挂机总时长候选值（分钟），默认运行会忽略，只有传入 `--enable-online` 或 `--only-online` 时读取 |
+| `online_refresh_interval_seconds` | 否 | 刷新间隔（秒），默认 `900` |
 | `task_exclude_ids` | 否 | 按任务 ID 排除，例如 `["25"]` |
 | `task_exclude_names` | 否 | 按完整任务名排除，例如 `["每周发帖任务"]` |
 | `task_exclude_keywords` | 否 | 按任务名或描述关键词排除，例如 `["发帖"]` |
 
 > *注：`cookie` 或 `username + password` 至少提供一组
+
+不传 `--enable-online` 或 `--only-online` 时，挂机默认不运行，并且会忽略配置文件里的挂机相关字段。推荐通过定时任务命令参数按本次运行启用：
+
+```bash
+task gamemale_daily_ql.py --enable-online --online-time-minutes 30
+task gamemale_daily_ql.py --enable-online --online-time-seconds 1800 --online-refresh-interval-seconds 900
+task gamemale_daily_ql.py --only-online --online-time-minutes 30
+```
+
+`--enable-online` 表示在正常任务流程中启用挂机；`--only-online` 表示只执行挂机。二者都不会自动设置挂机时长，通常需要与 `--online-time-minutes` 或 `--online-time-seconds` 一起使用。
 
 ---
 

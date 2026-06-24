@@ -9,6 +9,8 @@ accounts:
     auto_exchange: true  # 是否自动兑换血液为旅程
     auto_accept_tasks: true     # 是否自动接取新任务
     auto_complete_tasks: true   # 是否自动领取已完成任务奖励
+    online_time_minutes: 0      # 挂机总时长（分钟）
+    online_refresh_interval_seconds: 900  # 刷新间隔（秒）
     task_exclude_ids: []        # 按任务 ID 排除，例如 ["25"]
     task_exclude_names: []      # 按完整任务名排除，例如 ["每周发帖任务"]
     task_exclude_keywords: []   # 按关键词排除，例如 ["发帖"]
@@ -21,6 +23,8 @@ accounts:
     auto_exchange: true
     auto_accept_tasks: true
     auto_complete_tasks: true
+    online_time_minutes: 0
+    online_refresh_interval_seconds: 900
     task_exclude_ids: []
     task_exclude_names: []
     task_exclude_keywords: []
@@ -33,6 +37,8 @@ accounts:
   #   auto_exchange: true
   #   auto_accept_tasks: true
   #   auto_complete_tasks: true
+  #   online_time_minutes: 0
+  #   online_refresh_interval_seconds: 900
   #   task_exclude_ids: []
   #   task_exclude_names: []
   #   task_exclude_keywords: []

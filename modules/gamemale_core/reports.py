@@ -5,6 +5,14 @@ from typing import Dict, List, Optional
 
 
 class ReportMixin:
+    def _format_duration(self, seconds: int) -> str:
+        """将秒数格式化为 HH:MM:SS。"""
+        seconds = max(0, int(seconds))
+        hours = seconds // 3600
+        minutes = (seconds % 3600) // 60
+        secs = seconds % 60
+        return f"{hours:02d}:{minutes:02d}:{secs:02d}"
+
     def generate_detailed_report(
         self,
         task_results: Dict[str, bool],
@@ -69,6 +77,28 @@ class ReportMixin:
                     for result in completed_missions:
                         message += f"    - [{result.get('id', '')}] {result.get('name', '')}: 已领取\n"
                 message += "\n"
+
+        online_summary = getattr(self, "online_time_summary", {})
+        if online_summary:
+            message += "挂机时长:\n"
+            status_text = {
+                "disabled": "已禁用",
+                "skipped": "未配置时长，已跳过",
+                "pending": "待执行",
+                "completed": "已完成",
+                "stopped": "已中断",
+                "failed": "失败",
+            }.get(str(online_summary.get("status")), "未知")
+            message += f"  - 状态: {status_text}\n"
+            if online_summary.get("enabled"):
+                message += (
+                    f"  - 计划时长: {self._format_duration(int(online_summary.get('duration_seconds', 0)))}，"
+                    f"刷新间隔: {self._format_duration(int(online_summary.get('interval_seconds', 0)))}，"
+                    f"刷新次数: {online_summary.get('refresh_count', 0)}\n"
+                )
+                if online_summary.get("error"):
+                    message += f"  - 错误: {online_summary.get('error')}\n"
+            message += "\n"
 
         if task_summary_data:
             message += "任务总次数统计:\n"

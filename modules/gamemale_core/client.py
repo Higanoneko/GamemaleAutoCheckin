@@ -14,6 +14,7 @@ from .http import create_session
 from .login import LoginMixin
 from .logging_utils import log_error
 from .missions import MissionsMixin
+from .online import OnlineTimeMixin
 from .reports import ReportMixin
 from .social import SocialMixin
 from .stop_controller import StopController
@@ -22,6 +23,7 @@ from .stop_controller import StopController
 class GamemaleAutomation(
     LoginMixin,
     MissionsMixin,
+    OnlineTimeMixin,
     DailyTasksMixin,
     SocialMixin,
     CreditsMixin,
@@ -48,6 +50,7 @@ class GamemaleAutomation(
         self.is_logged_in = False
         self.mission_results: List[Dict[str, str]] = []
         self.mission_summary: Dict[str, int] = {}
+        self.online_time_summary: Dict[str, object] = {}
         self._controller = controller
         self._save_cookie_callback = save_cookie_callback
         self._ocr = None
@@ -104,3 +107,14 @@ class GamemaleAutomation(
         for key in keys:
             values.extend(_coerce_config_list(self.config.get(key)))
         return values
+
+    def _get_config_int(self, keys: List[str], default: int = 0) -> int:
+        """按别名读取整数配置。"""
+        for key in keys:
+            if key not in self.config:
+                continue
+            try:
+                return int(self.config.get(key))
+            except (TypeError, ValueError):
+                return default
+        return default

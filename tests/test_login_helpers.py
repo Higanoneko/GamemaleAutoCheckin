@@ -1,7 +1,9 @@
 import unittest
+from argparse import Namespace
 
 from bs4 import BeautifulSoup
 
+from gamemale_daily import apply_runtime_overrides
 from modules.gamemale_core.core import (
     _clean_captcha_text,
     _coerce_config_bool,
@@ -282,6 +284,159 @@ class LoginHelperTests(unittest.TestCase):
         )
         self.assertEqual(client.mission_summary["completed"], 1)
         self.assertEqual(client.mission_results[0]["status"], "completed")
+
+    def test_quick_accumulate_online_time_refreshes_until_duration(self):
+        calls = []
+        sleeps = []
+        client = GamemaleAutomation({
+            "online_runtime_enabled": True,
+            "online_time_seconds": 4,
+            "online_refresh_interval_seconds": 2,
+        })
+
+        class FakeResponse:
+            text = "ok"
+
+        def fake_send_request(method, url, **kwargs):
+            calls.append((method, url, kwargs))
+            return FakeResponse()
+
+        client._send_request = fake_send_request
+        client._sleep = lambda seconds: sleeps.append(seconds)
+
+        self.assertTrue(client.quick_accumulate_online_time())
+        self.assertEqual(len(calls), 3)
+        self.assertEqual(sleeps, [2, 2])
+        self.assertEqual(client.online_time_summary["status"], "completed")
+        self.assertEqual(client.online_time_summary["refresh_count"], 3)
+
+    def test_online_time_report_is_included(self):
+        client = GamemaleAutomation({"username": "test"})
+        client.online_time_summary = {
+            "enabled": True,
+            "status": "completed",
+            "duration_seconds": 900,
+            "interval_seconds": 300,
+            "refresh_count": 4,
+        }
+
+        report = client.generate_detailed_report({"挂机时长": True})
+
+        self.assertIn("挂机时长:", report)
+        self.assertIn("计划时长: 00:15:00", report)
+        self.assertIn("刷新次数: 4", report)
+
+    def test_runtime_online_time_args_enable_hang_for_this_run(self):
+        accounts = [{"username": "a", "online_time_enabled": False}]
+        args = Namespace(
+            online_time_minutes=30,
+            online_time_seconds=None,
+            online_refresh_interval_seconds=60,
+            enable_online=True,
+            only_online=False,
+        )
+
+        apply_runtime_overrides(accounts, args)
+
+        self.assertTrue(accounts[0]["online_runtime_enabled"])
+        self.assertEqual(accounts[0]["online_time_seconds"], 1800)
+        self.assertEqual(accounts[0]["online_refresh_interval_seconds"], 60)
+
+    def test_runtime_online_config_is_ignored_without_enable_flag(self):
+        accounts = [{
+            "username": "a",
+            "online_time_enabled": True,
+            "online_time_seconds": 600,
+            "online_refresh_interval_seconds": 60,
+        }]
+        args = Namespace(
+            online_time_minutes=None,
+            online_time_seconds=None,
+            online_refresh_interval_seconds=60,
+            enable_online=False,
+            only_online=False,
+        )
+
+        apply_runtime_overrides(accounts, args)
+
+        self.assertFalse(accounts[0]["online_runtime_enabled"])
+        self.assertEqual(accounts[0]["online_time_seconds"], 600)
+
+        client = GamemaleAutomation(accounts[0])
+        client._send_request = lambda *args, **kwargs: self.fail("挂机未显式启用时不应刷新")
+        self.assertTrue(client.quick_accumulate_online_time())
+        self.assertEqual(client.online_time_summary["status"], "disabled")
+
+    def test_runtime_online_duration_arg_alone_does_not_enable_hang(self):
+        accounts = [{"username": "a"}]
+        args = Namespace(
+            online_time_minutes=30,
+            online_time_seconds=None,
+            online_refresh_interval_seconds=None,
+            enable_online=False,
+            only_online=False,
+        )
+
+        apply_runtime_overrides(accounts, args)
+
+        self.assertFalse(accounts[0]["online_runtime_enabled"])
+        self.assertNotIn("online_time_seconds", accounts[0])
+
+    def test_enable_online_arg_can_use_configured_duration(self):
+        accounts = [{"username": "a", "online_time_minutes": 15}]
+        args = Namespace(
+            online_time_minutes=None,
+            online_time_seconds=None,
+            online_refresh_interval_seconds=None,
+            enable_online=True,
+            only_online=False,
+        )
+
+        apply_runtime_overrides(accounts, args)
+
+        self.assertTrue(accounts[0]["online_runtime_enabled"])
+        client = GamemaleAutomation(accounts[0])
+        enabled, duration_seconds, interval_seconds, _ = client._get_online_time_config()
+        self.assertTrue(enabled)
+        self.assertEqual(duration_seconds, 900)
+        self.assertEqual(interval_seconds, 900)
+
+    def test_runtime_only_online_arg_marks_accounts_for_online_only(self):
+        accounts = [{"username": "a", "online_time_enabled": False}]
+        args = Namespace(
+            online_time_minutes=15,
+            online_time_seconds=None,
+            online_refresh_interval_seconds=None,
+            enable_online=False,
+            only_online=True,
+        )
+
+        apply_runtime_overrides(accounts, args)
+
+        self.assertTrue(accounts[0]["only_online"])
+        self.assertTrue(accounts[0]["online_runtime_enabled"])
+        self.assertEqual(accounts[0]["online_time_seconds"], 900)
+
+    def test_execute_all_tasks_only_online_runs_no_other_tasks(self):
+        calls = []
+        client = GamemaleAutomation({
+            "username": "test",
+            "only_online": True,
+            "online_runtime_enabled": True,
+            "online_time_seconds": 1,
+            "online_refresh_interval_seconds": 1,
+        })
+        client.is_logged_in = True
+        client.formhash = "abc123"
+        client.quick_accumulate_online_time = lambda: calls.append("online") or True
+        client.quick_daily_sign = lambda: calls.append("sign") or True
+        client.quick_daily_lottery = lambda: calls.append("lottery") or True
+        client._sleep = lambda seconds: None
+
+        report = client.execute_all_tasks()
+
+        self.assertEqual(calls, ["online"])
+        self.assertIn("挂机时长", report)
 
 
 if __name__ == "__main__":

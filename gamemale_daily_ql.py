@@ -10,6 +10,7 @@ Gamemale 每日任务自动化脚本 - 青龙面板适配版
 import json
 import logging
 import os
+import argparse
 import signal
 import sys
 from pathlib import Path
@@ -62,6 +63,8 @@ accounts:
     auto_exchange: true
     auto_accept_tasks: true
     auto_complete_tasks: true
+    online_time_minutes: 0
+    online_refresh_interval_seconds: 900
     task_exclude_ids: []
     task_exclude_names: []
     task_exclude_keywords: []
@@ -132,6 +135,61 @@ def load_accounts():
     return []
 
 
+def parse_args():
+    """解析本次运行的命令行参数。"""
+    parser = argparse.ArgumentParser(description="Gamemale 每日任务自动化脚本 - 青龙面板版")
+    parser.add_argument(
+        "--online-time-minutes",
+        type=int,
+        default=None,
+        help="设置挂机总时长（分钟），需配合 --enable-online 或 --only-online",
+    )
+    parser.add_argument(
+        "--online-time-seconds",
+        type=int,
+        default=None,
+        help="设置挂机总时长（秒），需配合 --enable-online 或 --only-online",
+    )
+    parser.add_argument(
+        "--online-refresh-interval-seconds",
+        type=int,
+        default=None,
+        help="本次运行的挂机刷新间隔（秒），默认 900",
+    )
+    parser.add_argument(
+        "--enable-online",
+        action="store_true",
+        help="启用挂机刷新；未传时忽略配置文件中的挂机相关设置",
+    )
+    parser.add_argument(
+        "--only-online",
+        action="store_true",
+        help="仅执行挂机刷新任务，不执行签到、抽奖、任务、日志互动和兑换",
+    )
+    return parser.parse_args()
+
+
+def apply_runtime_overrides(accounts, args):
+    """应用命令行参数覆盖；只有显式参数才允许挂机。"""
+    online_seconds = args.online_time_seconds
+    if online_seconds is None and args.online_time_minutes is not None:
+        online_seconds = args.online_time_minutes * 60
+
+    online_runtime_enabled = args.enable_online or args.only_online
+
+    for account in accounts:
+        account["online_runtime_enabled"] = online_runtime_enabled
+        if args.only_online:
+            account["only_online"] = True
+        if online_runtime_enabled and online_seconds is not None:
+            account["online_time_seconds"] = max(0, online_seconds)
+            account.pop("online_time_minutes", None)
+        if online_runtime_enabled and args.online_refresh_interval_seconds is not None:
+            account["online_refresh_interval_seconds"] = max(1, args.online_refresh_interval_seconds)
+
+    return accounts
+
+
 def save_cookie_to_config(client: GamemaleAutomation) -> bool:
     """将 cookie 保存到配置文件"""
     if not YAML_AVAILABLE:
@@ -175,6 +233,7 @@ def main():
         format="%(asctime)s %(message)s",
         datefmt="%H:%M:%S",
     )
+    args = parse_args()
     accounts = load_accounts()
     if not accounts:
         config_path = get_config_file_path()
@@ -185,6 +244,7 @@ def main():
             print(f"首次运行，已创建配置文件: {config_path}")
         print("请编辑配置文件填写账户信息后重新运行")
         sys.exit(1)
+    accounts = apply_runtime_overrides(accounts, args)
 
     failed = run_all_accounts(
         accounts,

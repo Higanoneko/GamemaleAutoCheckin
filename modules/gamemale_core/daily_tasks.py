@@ -25,12 +25,26 @@ class DailyTasksMixin:
         log_section("开始执行任务", self.account_name)
         task_results: Dict[str, bool] = {}
 
+        if self._get_config_bool(["only_online", "only_online_time"], default=False):
+            log_info("仅执行任务: 挂机时长", self.account_name)
+            task_results["挂机时长"] = self.quick_accumulate_online_time()
+            report_message = self.generate_detailed_report(
+                task_results,
+                user_credits={},
+                task_summary_data=[],
+            )
+            success_count = sum(1 for result in task_results.values() if result)
+            total_count = len(task_results)
+            log_success(f"任务完成: {success_count}/{total_count} 成功", self.account_name)
+            return report_message
+
         # 基础任务
         tasks = [
             ("签到", self.quick_daily_sign),
             ("抽奖", self.quick_daily_lottery),
             ("接取新任务", self.quick_accept_new_tasks),
             ("完成任务", self.quick_complete_doing_missions),
+            ("挂机时长", self.quick_accumulate_online_time),
         ]
 
         for name, func in tasks:
@@ -39,6 +53,15 @@ class DailyTasksMixin:
                 break
             log_info(f"执行任务: {name}", self.account_name)
             task_results[name] = func()
+            self._sleep(random.uniform(1, 2))
+
+        if (
+            not self._is_stopped()
+            and self.online_time_summary.get("status") == "completed"
+            and self.online_time_summary.get("refresh_count", 0) > 0
+        ):
+            log_info("执行任务: 挂机后完成任务", self.account_name)
+            task_results["挂机后完成任务"] = self.quick_complete_doing_missions()
             self._sleep(random.uniform(1, 2))
 
         # 日志互动

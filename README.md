@@ -12,6 +12,7 @@
   - 每日自动签到
   - 每日自动抽奖
   - **自动接取与完成任务**: 自动检查“新任务”列表并接取可用任务，支持按 ID、任务名或关键词排除指定任务；已接取任务达到完成条件后自动领取奖励。
+  - **挂机时长刷新**: 可配置总挂机时长和刷新间隔，使用登录后的 Session 定时刷新论坛页面以累计在线时间。
   - **智能日志互动**: 自动为最新日志“震惊”，精确计数新互动，并确保在无新互动时也能继续执行关联任务（如访问空间、打招呼）。
   - 智能访问用户空间
   - **动态用户打招呼** (新功能!)
@@ -60,6 +61,16 @@
     python gamemale_daily.py
     ```
 
+    如需本次运行启用挂机刷新，可传入参数：
+    ```bash
+    python gamemale_daily.py --enable-online --online-time-minutes 30 --online-refresh-interval-seconds 900
+    ```
+
+    如只想执行挂机刷新，不执行签到、抽奖等其它任务：
+    ```bash
+    python gamemale_daily.py --only-online --online-time-minutes 30
+    ```
+
 ### GitHub Actions 部署
 
 1.  **Fork/创建仓库**
@@ -82,6 +93,8 @@
         "auto_exchange_enabled": true,
         "auto_accept_tasks": true,
         "auto_complete_tasks": true,
+        "online_time_minutes": 0,
+        "online_refresh_interval_seconds": 900,
         "task_exclude_ids": [],
         "task_exclude_names": [],
         "task_exclude_keywords": []
@@ -155,6 +168,24 @@
 
 -   `auto_complete_tasks`: **(布尔值, 可选, 默认为 true)**
     -   **说明**: 是否自动检查“进行中的任务”，并在任务进度达到 100% 且可领取奖励时自动领取。设置为 `false` 可禁用此功能。
+
+-   `online_time_minutes`: **(整数, 可选, 默认为 0)**
+    -   **说明**: 挂机总时长候选值，单位分钟。默认运行会忽略该值；只有传入 `--enable-online` 或 `--only-online` 时才会读取。也可使用 `online_time_seconds` 直接配置秒数。
+
+-   `online_refresh_interval_seconds`: **(整数, 可选, 默认为 900)**
+    -   **说明**: 刷新间隔，单位秒。默认 900 秒，等同示例用户脚本的默认刷新间隔。
+
+### 挂机参数
+
+不传 `--enable-online` 或 `--only-online` 时，挂机任务默认不运行，并且会忽略配置文件里的挂机相关字段。以下参数会覆盖配置文件，仅影响本次运行：
+
+```bash
+python gamemale_daily.py --enable-online --online-time-minutes 30
+python gamemale_daily.py --enable-online --online-time-seconds 1800 --online-refresh-interval-seconds 900
+python gamemale_daily.py --only-online --online-time-minutes 30
+```
+
+`--enable-online` 表示在正常任务流程中启用挂机；`--only-online` 表示只执行挂机。二者都不会自动设置挂机时长，通常需要与 `--online-time-minutes` 或 `--online-time-seconds` 一起使用。
 
 -   `task_exclude_ids`: **(数组, 可选)**
     -   **说明**: 按任务 ID 排除不想自动接取的任务。例如 `["25"]`。
