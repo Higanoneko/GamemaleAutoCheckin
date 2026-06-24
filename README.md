@@ -11,6 +11,7 @@
 - 🔄 **核心任务自动化**:
   - 每日自动签到
   - 每日自动抽奖
+  - **自动接取与完成任务**: 自动检查“新任务”列表并接取可用任务，支持按 ID、任务名或关键词排除指定任务；已接取任务达到完成条件后自动领取奖励。
   - **智能日志互动**: 自动为最新日志“震惊”，精确计数新互动，并确保在无新互动时也能继续执行关联任务（如访问空间、打招呼）。
   - 智能访问用户空间
   - **动态用户打招呼** (新功能!)
@@ -78,7 +79,12 @@
         "password": "你的论坛密码",
         "questionid": "0",
         "answer": "",
-        "auto_exchange_enabled": true
+        "auto_exchange_enabled": true,
+        "auto_accept_tasks": true,
+        "auto_complete_tasks": true,
+        "task_exclude_ids": [],
+        "task_exclude_names": [],
+        "task_exclude_keywords": []
       },
       "notification": {
         "enabled": true,
@@ -143,6 +149,21 @@
 
 -   `auto_exchange_enabled`: **(布尔值, 可选, 默认为 true)**
     -   **说明**: 是否开启“血液自动兑换旅程”功能。如果血液超过34，且配置了密码，脚本会尝试兑换。设置为 `false` 可禁用此功能。
+
+-   `auto_accept_tasks`: **(布尔值, 可选, 默认为 true)**
+    -   **说明**: 是否自动检查并接取“新任务”页面中的可接取任务。设置为 `false` 可禁用此功能。
+
+-   `auto_complete_tasks`: **(布尔值, 可选, 默认为 true)**
+    -   **说明**: 是否自动检查“进行中的任务”，并在任务进度达到 100% 且可领取奖励时自动领取。设置为 `false` 可禁用此功能。
+
+-   `task_exclude_ids`: **(数组, 可选)**
+    -   **说明**: 按任务 ID 排除不想自动接取的任务。例如 `["25"]`。
+
+-   `task_exclude_names`: **(数组, 可选)**
+    -   **说明**: 按完整任务名排除不想自动接取的任务。例如 `["每周发帖任务"]`。
+
+-   `task_exclude_keywords`: **(数组, 可选)**
+    -   **说明**: 按任务名或任务描述中的关键词排除任务。例如 `["发帖", "回帖"]`。
 
 ### `notification` (通知配置)
 

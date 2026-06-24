@@ -12,6 +12,8 @@ from .core import (
     BLOG_MAX_PAGES,
     BLOOD_EXCHANGE_THRESHOLD,
     POKE_TARGET_COUNT,
+    TASK_DOING_URL,
+    TASK_LIST_URL,
     DDDDOCR_AVAILABLE,
     # 停止控制器
     StopController,
@@ -34,7 +36,7 @@ from .core import (
 __all__ = [
     "BASE_URL", "DEFAULT_TIMEOUT", "MAX_LOGIN_RETRIES",
     "BLOG_INTERACTION_TARGET", "BLOG_MAX_PAGES",
-    "BLOOD_EXCHANGE_THRESHOLD", "POKE_TARGET_COUNT",
+    "BLOOD_EXCHANGE_THRESHOLD", "POKE_TARGET_COUNT", "TASK_LIST_URL", "TASK_DOING_URL",
     "DDDDOCR_AVAILABLE",
     "StopController", "stop_controller",
     "logger", "log_info", "log_success", "log_error", "log_warning", "log_section",

@@ -60,6 +60,11 @@ accounts:
     password: ""
     notify_enabled: true
     auto_exchange: true
+    auto_accept_tasks: true
+    auto_complete_tasks: true
+    task_exclude_ids: []
+    task_exclude_names: []
+    task_exclude_keywords: []
 """
 
 

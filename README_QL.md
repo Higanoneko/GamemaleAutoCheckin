@@ -4,6 +4,7 @@
 
 - 支持多账户运行
 - 自动签到、抽奖、日志互动、空间访问、打招呼
+- 自动检查并接取新任务，支持排除指定任务；已接取任务完成后自动领取奖励
 - 自动血液兑换旅程
 - 集成青龙面板通知系统
 - 支持 Cookie 登录和密码登录
@@ -65,7 +66,12 @@ ddddocr
             "password": "你的密码",
             "questionid": "0",
             "answer": "",
-            "auto_exchange_enabled": true
+            "auto_exchange_enabled": true,
+            "auto_accept_tasks": true,
+            "auto_complete_tasks": true,
+            "task_exclude_ids": [],
+            "task_exclude_names": [],
+            "task_exclude_keywords": []
         }
     ]
 }
@@ -105,6 +111,11 @@ ddddocr
 | `questionid` | 否 | 安全问题ID，默认 `"0"` 表示无安全问题 |
 | `answer` | 否 | 安全问题答案 |
 | `auto_exchange_enabled` | 否 | 是否自动兑换血液为旅程，默认 `true` |
+| `auto_accept_tasks` | 否 | 是否自动接取“新任务”页面中的可接任务，默认 `true` |
+| `auto_complete_tasks` | 否 | 是否自动领取已完成的进行中任务奖励，默认 `true` |
+| `task_exclude_ids` | 否 | 按任务 ID 排除，例如 `["25"]` |
+| `task_exclude_names` | 否 | 按完整任务名排除，例如 `["每周发帖任务"]` |
+| `task_exclude_keywords` | 否 | 按任务名或描述关键词排除，例如 `["发帖"]` |
 
 > *注：`cookie` 或 `username + password` 至少提供一组
 
