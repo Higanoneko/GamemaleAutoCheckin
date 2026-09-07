@@ -134,9 +134,15 @@ task gamemale_daily_ql.py --only-online --online-time-minutes 30
 | `task_exclude_ids` | 否 | 按任务 ID 排除，例如 `["25"]` |
 | `task_exclude_names` | 否 | 按完整任务名排除，例如 `["每周发帖任务"]` |
 | `task_exclude_keywords` | 否 | 按任务名或描述关键词排除，例如 `["发帖"]` |
-| `cloudflare_solver` | 否 | 打码平台解算服务：`2captcha` / `capsolver` / `yescaptcha`，留空禁用；也可用环境变量 `GAMEMALE_CF_SOLVER` |
-| `cloudflare_api_key` | 否 | 打码平台 API Key；也可用环境变量 `GAMEMALE_CF_API_KEY` |
-| `cloudflare_max_solves` | 否 | 单次运行最多解算次数（按次计费），默认 `2` |
+| `cloudflare`（顶层对象） | 否 | Cloudflare 人机验证自动解算配置，与 `accounts` **同级**：`solver` 解算服务（`2captcha` / `capsolver` / `yescaptcha`，留空禁用）、`api_key` 打码平台 Key、`max_solves` 单次运行最多解算次数（默认 `2`）。也可用环境变量 `GAMEMALE_CF_SOLVER` / `GAMEMALE_CF_API_KEY` |
+
+```yaml
+# 配置文件顶层（与 accounts 同级）
+cloudflare:
+  solver: ""        # 2captcha / capsolver / yescaptcha
+  api_key: ""
+  max_solves: 2     # 单次运行最多解算次数（控制成本）
+```
 
 > *注：`cookie` 或 `username + password` 至少提供一组
 
@@ -261,8 +267,8 @@ A: 这是论坛部署的 Turnstile 验证（返回 "请稍候 / 检查站点连�
 命中时脚本会自动通过打码平台解算放行，请按需配置：
 1. **打码平台（稳定）**：在青龙面板 → **环境变量** 添加 `GAMEMALE_CF_SOLVER`
    （`2captcha` / `capsolver` / `yescaptcha`）和 `GAMEMALE_CF_API_KEY`（打码平台
-   注册充值后获取，单次仅几分钱）；或在配置文件中给账户填 `cloudflare_solver` /
-   `cloudflare_api_key`。
+   注册充值后获取，单次仅几分钱）；或在配置文件**顶层**（与 `accounts` 同级）加
+   `cloudflare: {solver, api_key, max_solves}` 块。
 2. **手动**：在浏览器中打开 gamemale.com 完成一次验证并登录，重新复制完整 Cookie 填入配置。
 
 > **多账户提示**：同一批账户运行时，脚本共享放行 Cookie——首个账户打码成功后，

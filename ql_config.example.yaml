@@ -1,5 +1,14 @@
 # GameMale 自动签到配置文件
 # 支持多账户，每个账户可以单独配置
+#
+# Cloudflare Turnstile 人机验证（与 accounts 同级，全局生效）：
+# 命中验证页时通过打码平台自动解算放行（按次计费约 ¥0.02~0.05）：
+# solver 可选: 2captcha / capsolver / yescaptcha（留空则禁用）
+# api_key 在对应平台注册后获取；也可用环境变量 GAMEMALE_CF_SOLVER / GAMEMALE_CF_API_KEY
+cloudflare:
+  solver: ""
+  api_key: ""
+  max_solves: 2    # 单次运行最多解算次数（控制成本）
 
 accounts:
   # 账户1 - 启用通知
@@ -15,13 +24,6 @@ accounts:
     task_exclude_names: []      # 按完整任务名排除，例如 ["每周发帖任务"]
     task_exclude_keywords: []   # 按关键词排除，例如 ["发帖"]
     notify_enabled: true         # 发送通知
-    # ---- Cloudflare Turnstile 人机验证（论坛已启用）----
-    # 命中验证页时通过打码平台自动解算放行（按次计费约 ¥0.02~0.05）：
-    # solver 可选: 2captcha / capsolver / yescaptcha（留空则禁用）
-    # api_key 在对应平台注册后获取；也可用环境变量 GAMEMALE_CF_SOLVER / GAMEMALE_CF_API_KEY
-    cloudflare_solver: ""
-    cloudflare_api_key: ""
-    cloudflare_max_solves: 2    # 单次运行最多解算次数（控制成本）
 
   # 账户2 - 禁用通知（任务正常执行，但不会在通知中显示结果）
   - cookie: ""
@@ -36,8 +38,6 @@ accounts:
     task_exclude_names: []
     task_exclude_keywords: []
     notify_enabled: false        # 不发送通知
-    cloudflare_solver: ""
-    cloudflare_api_key: ""
 
   # 更多账户...
   # - cookie: ""

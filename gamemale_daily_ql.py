@@ -14,7 +14,7 @@ import argparse
 import signal
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from modules.gamemale_core import (
     GamemaleAutomation,
@@ -56,6 +56,15 @@ CONFIG_FILE_NAME = "GameMale_Config.yaml"
 QL_CONFIG_PATHS = ["/ql/data/config", "/ql/config", Path(__file__).parent]
 
 CONFIG_TEMPLATE = """# GameMale 自动签到配置文件
+# Cloudflare Turnstile 人机验证（与 accounts 同级，全局生效）：
+# 命中验证页时通过打码平台自动解算放行（按次计费约 ¥0.02~0.05）。
+# solver: 2captcha / capsolver / yescaptcha；留空则禁用自动解算。
+# 也可用环境变量 GAMEMALE_CF_SOLVER / GAMEMALE_CF_API_KEY 配置
+cloudflare:
+  solver: ""
+  api_key: ""
+  max_solves: 2    # 单次运行最多解算次数（控制成本）
+
 accounts:
   - cookie: ""
     username: ""
@@ -69,13 +78,6 @@ accounts:
     task_exclude_ids: []
     task_exclude_names: []
     task_exclude_keywords: []
-    # Cloudflare Turnstile 人机验证（论坛已启用）：
-    # 命中验证页时通过打码平台自动解算放行（按次计费约 ¥0.02~0.05）。
-    # solver: 2captcha / capsolver / yescaptcha；留空则禁用自动解算。
-    # 也可用环境变量 GAMEMALE_CF_SOLVER / GAMEMALE_CF_API_KEY 配置
-    cloudflare_solver: ""
-    cloudflare_api_key: ""
-    cloudflare_max_solves: 2
 """
 
 
@@ -201,6 +203,28 @@ def apply_runtime_overrides(
     return accounts
 
 
+def load_cloudflare_settings() -> Optional[Dict[str, Any]]:
+    """读取配置文件顶层的 cloudflare 设置块（与 accounts 同级）。
+
+    返回 None 表示未配置（此时仅使用环境变量 GAMEMALE_CF_SOLVER /
+    GAMEMALE_CF_API_KEY 兜底）。
+    """
+    if not YAML_AVAILABLE:
+        return None
+    config_path = get_config_file_path()
+    if not config_path.exists():
+        return None
+    try:
+        with open(config_path, 'r', encoding='utf-8') as f:
+            config = yaml.safe_load(f)
+    except yaml.YAMLError as e:
+        print(f"配置文件格式错误: {e}")
+        return None
+    if not config or not isinstance(config.get("cloudflare"), dict):
+        return None
+    return config["cloudflare"]
+
+
 def save_cookie_to_config(client: GamemaleAutomation) -> bool:
     """将 cookie 保存到配置文件"""
     if not YAML_AVAILABLE:
@@ -262,6 +286,7 @@ def main() -> None:
         controller=stop_controller,
         save_cookie_callback=save_cookie_to_config,
         send_notification=send_notification,
+        cloudflare_config=load_cloudflare_settings(),
         script_title="Gamemale 每日任务自动化脚本 - 青龙面板版",
     )
     if failed > 0:

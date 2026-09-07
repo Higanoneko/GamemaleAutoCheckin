@@ -35,7 +35,7 @@
 2. **打码平台解算**（可选配置）：命中验证页时自动调用打码平台解算 Turnstile
    （单次约 ¥0.02~0.05）并提交放行，无需人工干预。
 
-其他保障：每次运行最多解算 `cloudflare_max_solves` 次（默认 2，控制成本）；
+其他保障：每次运行最多解算 `cloudflare.max_solves` 次（默认 2，控制成本）；
 解算成功后会把含放行标记的完整 Cookie 回写配置，后续运行大概率直接放行。
 
 ### 方式一：打码平台（付费兜底，稳定可靠）
@@ -48,11 +48,12 @@
   Actions` 中添加：
   - `GAMEMALE_CF_SOLVER` = `2captcha` / `capsolver` / `yescaptcha`
   - `GAMEMALE_CF_API_KEY` = 你的平台 API Key
-- **配置文件（config.json / config.yaml 账户级）**：
-  ```json
-  "cloudflare_solver": "2captcha",
-  "cloudflare_api_key": "你的API Key",
-  "cloudflare_max_solves": 2
+- **配置文件（config.yaml / config.json 顶层 `cloudflare` 块，与 `accounts` 同级）**：
+  ```yaml
+  cloudflare:
+    solver: "2captcha"      # 2captcha / capsolver / yescaptcha
+    api_key: "你的API Key"
+    max_solves: 2           # 单次运行最多解算次数（控制成本，默认 2）
   ```
   （也可写成嵌套对象 `"cloudflare": {"solver": "capsolver", "api_key": "..."}`）
 
@@ -65,7 +66,7 @@
 
 解算成功后，含放行标记的完整 Cookie 会自动回写各账户配置（日志"已把含放行标记
 的 Cookie 回写到配置"），下次运行大概率直接放行、零打码。仅当放行标记失效
-（服务端过期等）时才会再次解算，且受 `cloudflare_max_solves` 上限保护。
+（服务端过期等）时才会再次解算，且受 `cloudflare.max_solves` 上限保护。
 
 ### 方式二：提供"已过验证"的完整 Cookie（零成本，适合本地/手动更新）
 
@@ -252,14 +253,11 @@ python gamemale_daily.py --only-online --online-time-minutes 30
 -   `task_exclude_keywords`: **(数组, 可选)**
     -   **说明**: 按任务名或任务描述中的关键词排除任务。例如 `["发帖", "回帖"]`。
 
--   `cloudflare_solver`: **(字符串, 可选)**
-    -   **说明**: Cloudflare 人机验证解算服务，可选 `2captcha` / `capsolver` / `yescaptcha`。留空表示禁用自动解算。也可通过环境变量 `GAMEMALE_CF_SOLVER` 配置。
-
--   `cloudflare_api_key`: **(字符串, 可选)**
-    -   **说明**: 上述打码平台的 API Key。也可通过环境变量 `GAMEMALE_CF_API_KEY` 配置（GitHub Actions 用 Secret 注入）。
-
--   `cloudflare_max_solves`: **(整数, 可选, 默认为 2)**
-    -   **说明**: 单次运行最多自动解算人机验证的次数（按次计费，默认 2 次足够）。
+-   `cloudflare`: **(对象, 可选, 顶层配置，与 `accounts` 同级)**
+    -   **说明**: Cloudflare 人机验证自动解算配置。
+    -   `solver`: **(字符串, 可选)** 解算服务，可选 `2captcha` / `capsolver` / `yescaptcha`。留空表示禁用自动解算。也可通过环境变量 `GAMEMALE_CF_SOLVER` 配置。
+    -   `api_key`: **(字符串, 可选)** 上述打码平台的 API Key。也可通过环境变量 `GAMEMALE_CF_API_KEY` 配置（GitHub Actions 用 Secret 注入）。
+    -   `max_solves`: **(整数, 可选, 默认为 2)** 单次运行最多自动解算人机验证的次数（按次计费，默认 2 次足够）。
 
 ### `notification` (通知配置)
 

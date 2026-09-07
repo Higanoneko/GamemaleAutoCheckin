@@ -36,6 +36,15 @@ SCRIPT_DIR = Path(__file__).parent
 CONFIG_FILE_NAME = "config.yaml"
 
 CONFIG_TEMPLATE = """# GameMale 自动签到配置文件
+# Cloudflare Turnstile 人机验证（与 accounts 同级，全局生效）：
+# 命中验证页时通过打码平台自动解算放行（按次计费约 ¥0.02~0.05）。
+# solver: 2captcha / capsolver / yescaptcha；留空则禁用自动解算。
+# 也可用环境变量 GAMEMALE_CF_SOLVER / GAMEMALE_CF_API_KEY 配置
+cloudflare:
+  solver: ""
+  api_key: ""
+  max_solves: 2    # 单次运行最多解算次数（控制成本）
+
 accounts:
   - cookie: ""
     username: ""
@@ -49,13 +58,6 @@ accounts:
     task_exclude_ids: []
     task_exclude_names: []
     task_exclude_keywords: []
-    # Cloudflare Turnstile 人机验证（论坛已启用）：
-    # 命中验证页时通过打码平台自动解算放行（按次计费约 ¥0.02~0.05）。
-    # solver: 2captcha / capsolver / yescaptcha；留空则禁用自动解算。
-    # 也可用环境变量 GAMEMALE_CF_SOLVER / GAMEMALE_CF_API_KEY 配置
-    cloudflare_solver: ""
-    cloudflare_api_key: ""
-    cloudflare_max_solves: 2
 
 notification:
   enabled: false
@@ -254,6 +256,7 @@ def main() -> None:
         accounts,
         save_cookie_callback=save_cookie_to_config,
         send_notification=_create_notifier(config),
+        cloudflare_config=config.get("cloudflare"),
         script_title="Gamemale 每日任务自动化脚本",
     )
     if failed > 0:

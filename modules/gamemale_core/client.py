@@ -55,6 +55,7 @@ class GamemaleAutomation(
         controller: Optional[StopController] = None,
         save_cookie_callback: Optional[Callable[['GamemaleAutomation'], bool]] = None,
         cf_share: Optional[CloudflarePassPool] = None,
+        cloudflare_config: Optional[Dict[str, Any]] = None,
     ) -> None:
         self.config = account_config
         self.account_index = account_index
@@ -68,33 +69,42 @@ class GamemaleAutomation(
         self._controller = controller
         self._save_cookie_callback = save_cookie_callback
         self._ocr = None
+        # 顶层 cloudflare 配置块（配置文件里与 accounts 同级，由入口脚本注入）
+        self._cloudflare_config = (
+            dict(cloudflare_config) if isinstance(cloudflare_config, dict) else {}
+        )
         # Cloudflare 人机验证解算状态
         self._cf_solved_count = 0
-        self._cf_max_solves = max(0, self._get_config_int(
-            ["cloudflare_max_solves", "cf_max_solves"], default=2,
-        ))
+        self._cf_max_solves = max(0, self._get_cf_max_solves())
         # 多账户共享的放行 Cookie 池（同批账户间复用，减少打码次数）
         self._cf_pool = cf_share
         self._cf_pool_tried = False
         self._cf_cookie_names_before: Optional[Set[str]] = None
 
-    def _get_cloudflare_solver_config(self) -> Tuple[str, str]:
-        """读取 Turnstile 解算服务配置（账户配置优先，环境变量兜底）。
+    def _get_cf_max_solves(self) -> int:
+        """读取单次运行允许的解算次数上限（顶层 cloudflare.max_solves，默认 2）。"""
+        try:
+            return int(self._cloudflare_config.get("max_solves"))
+        except (TypeError, ValueError):
+            return 2
 
-        账户配置支持两种形态：
-          - cloudflare: {solver: ..., api_key: ...}
-          - cloudflare_solver / cloudflare_api_key 平铺键
+    def _get_cloudflare_solver_config(self) -> Tuple[str, str]:
+        """读取 Turnstile 解算服务配置（顶层 cloudflare 块优先，环境变量兜底）。
+
+        顶层配置形态（配置文件里与 accounts 同级，由入口脚本注入）：
+          cloudflare: {solver: ..., api_key: ..., max_solves: N}
         环境变量：GAMEMALE_CF_SOLVER / GAMEMALE_CF_API_KEY（兼容 CF_SOLVER / CF_API_KEY）
         """
-        solver, api_key = "", ""
-        nested = self.config.get("cloudflare")
-        if isinstance(nested, dict):
-            solver = str(nested.get("solver") or nested.get("provider") or "").strip()
-            api_key = str(nested.get("api_key") or nested.get("key") or "").strip()
-        if not solver:
-            solver = self._get_config_str(["cloudflare_solver", "cf_solver"])
-        if not api_key:
-            api_key = self._get_config_str(["cloudflare_api_key", "cf_api_key"])
+        solver = str(
+            self._cloudflare_config.get("solver")
+            or self._cloudflare_config.get("provider")
+            or ""
+        ).strip()
+        api_key = str(
+            self._cloudflare_config.get("api_key")
+            or self._cloudflare_config.get("key")
+            or ""
+        ).strip()
 
         solver = solver or os.environ.get("GAMEMALE_CF_SOLVER") or os.environ.get("CF_SOLVER")
         api_key = api_key or os.environ.get("GAMEMALE_CF_API_KEY") or os.environ.get("CF_API_KEY")
@@ -238,8 +248,8 @@ class GamemaleAutomation(
             log_error(
                 "检测到 Cloudflare Turnstile 人机验证，但未配置任何解算通道。\n"
                 "请二选一：\n"
-                "  1) 打码平台：在账户配置（cloudflare_solver / cloudflare_api_key 或 "
-                "cloudflare: {solver, api_key}）或环境变量 "
+                "  1) 打码平台：在配置文件顶层 cloudflare: {solver, api_key} "
+                "（与 accounts 同级）或环境变量 "
                 "GAMEMALE_CF_SOLVER / GAMEMALE_CF_API_KEY 中填写密钥"
                 "（支持 2captcha / capsolver / yescaptcha，单次约 ¥0.02~0.05）；\n"
                 "  2) 在浏览器中打开 gamemale.com 完成人机验证后，重新复制完整的 Cookie。",

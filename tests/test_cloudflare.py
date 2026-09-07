@@ -124,10 +124,19 @@ class SubmitTokenTests(unittest.TestCase):
 
 
 class ChallengeAutoSolveFlowTests(unittest.TestCase):
-    def _make_client(self, first_challenge=True, config=None, challenge_twice=False, pool=None):
+    def _make_client(
+        self,
+        first_challenge=True,
+        config=None,
+        challenge_twice=False,
+        pool=None,
+        cf_config=None,
+    ):
         config = dict(config or {})
         config.setdefault("username", "test")
-        client = GamemaleAutomation(config, cf_share=pool)
+        client = GamemaleAutomation(
+            config, cf_share=pool, cloudflare_config=cf_config,
+        )
 
         responses = []
 
@@ -172,7 +181,7 @@ class ChallengeAutoSolveFlowTests(unittest.TestCase):
     @patch("modules.gamemale_core.client.solve_turnstile", return_value="fake-token")
     def test_send_request_solves_challenge_and_replays(self, mock_solve):
         client = self._make_client(
-            config={"cloudflare_solver": "2captcha", "cloudflare_api_key": "secret-key"}
+            cf_config={"solver": "2captcha", "api_key": "secret-key"}
         )
 
         response = client._send_request("GET", "https://www.gamemale.com/forum.php")
@@ -198,7 +207,7 @@ class ChallengeAutoSolveFlowTests(unittest.TestCase):
     def test_send_request_stops_after_max_solves(self, mock_solve):
         client = self._make_client(
             challenge_twice=True,
-            config={"cloudflare_solver": "capsolver", "cloudflare_api_key": "k", "cloudflare_max_solves": 1},
+            cf_config={"solver": "capsolver", "api_key": "k", "max_solves": 1},
         )
 
         response = client._send_request("GET", "https://www.gamemale.com/forum.php")
@@ -218,24 +227,33 @@ class ChallengeAutoSolveFlowTests(unittest.TestCase):
             self.assertEqual(solver, "yescaptcha")
             self.assertEqual(api_key, "env-key")
 
-    def test_account_config_takes_priority_over_env(self):
+    def test_top_level_cloudflare_config_takes_priority_over_env(self):
         with patch.dict(
             "os.environ",
             {"GAMEMALE_CF_SOLVER": "yescaptcha", "GAMEMALE_CF_API_KEY": "env-key"},
         ):
-            client = GamemaleAutomation({
-                "username": "t",
-                "cloudflare": {"solver": "capsolver", "api_key": "cfg-key"},
-            })
+            client = GamemaleAutomation(
+                {"username": "t"},
+                cloudflare_config={"solver": "capsolver", "api_key": "cfg-key"},
+            )
             solver, api_key = client._get_cloudflare_solver_config()
             self.assertEqual(solver, "capsolver")
             self.assertEqual(api_key, "cfg-key")
+
+    def test_max_solves_from_top_level_cloudflare_config(self):
+        client = GamemaleAutomation(
+            {"username": "t"},
+            cloudflare_config={"max_solves": 5},
+        )
+        self.assertEqual(client._cf_max_solves, 5)
+        client = GamemaleAutomation({"username": "t"})
+        self.assertEqual(client._cf_max_solves, 2)
 
 
 class SharedPassPoolTests(unittest.TestCase):
     """多账户共享放行 Cookie：第一个账户打码，后续账户复用，避免重复打码。"""
 
-    API_CONFIG = {"cloudflare_solver": "2captcha", "cloudflare_api_key": "api-key"}
+    API_CONFIG = {"solver": "2captcha", "api_key": "api-key"}
 
     @patch("modules.gamemale_core.client.solve_turnstile", return_value="token-1")
     def test_second_account_reuses_pool_and_skips_api(self, mock_api):
@@ -244,7 +262,7 @@ class SharedPassPoolTests(unittest.TestCase):
         pool = CloudflarePassPool()
         # 账户 A：命中挑战 → 打码成功 → 放行 Cookie 进入共享池
         client_a = ChallengeAutoSolveFlowTests._make_client(
-            self, config=dict(self.API_CONFIG), pool=pool,
+            self, cf_config=dict(self.API_CONFIG), pool=pool,
         )
         response_a = client_a._send_request("GET", "https://www.gamemale.com/forum.php")
         self.assertEqual(response_a.text, NORMAL_HTML)
@@ -257,7 +275,7 @@ class SharedPassPoolTests(unittest.TestCase):
 
         # 账户 B（同一池）：命中挑战 → 直接复用池中 Cookie，不再打码
         client_b = ChallengeAutoSolveFlowTests._make_client(
-            self, config=dict(self.API_CONFIG), pool=pool,
+            self, cf_config=dict(self.API_CONFIG), pool=pool,
         )
         mock_api.reset_mock()
         response_b = client_b._send_request("GET", "https://www.gamemale.com/forum.php")
@@ -274,7 +292,7 @@ class SharedPassPoolTests(unittest.TestCase):
         pool = CloudflarePassPool()
         # 账户 A：打码成功并共享
         client_a = ChallengeAutoSolveFlowTests._make_client(
-            self, config=dict(self.API_CONFIG), pool=pool,
+            self, cf_config=dict(self.API_CONFIG), pool=pool,
         )
         client_a._send_request("GET", "https://www.gamemale.com/forum.php")
         self.assertEqual(mock_api.call_count, 1)
@@ -282,7 +300,7 @@ class SharedPassPoolTests(unittest.TestCase):
         # 账户 B：复用共享 Cookie 后重放仍命中挑战（放行失效/不适用）→ 自己打码兜底
         mock_api.reset_mock()
         client_b = ChallengeAutoSolveFlowTests._make_client(
-            self, config=dict(self.API_CONFIG), pool=pool, challenge_twice=True,
+            self, cf_config=dict(self.API_CONFIG), pool=pool, challenge_twice=True,
         )
         response_b = client_b._send_request("GET", "https://www.gamemale.com/forum.php")
         self.assertEqual(response_b.text, NORMAL_HTML)  # 兜底打码成功后放行

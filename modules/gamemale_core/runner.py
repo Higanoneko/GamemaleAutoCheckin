@@ -17,6 +17,7 @@ def run_all_accounts(
     controller: Optional[StopController] = None,
     save_cookie_callback: Optional[Callable[[GamemaleAutomation], bool]] = None,
     send_notification: Optional[Callable[[str, str], None]] = None,
+    cloudflare_config: Optional[Dict[str, Any]] = None,
     script_title: str = "Gamemale 每日任务自动化脚本",
 ) -> int:
     """
@@ -27,6 +28,8 @@ def run_all_accounts(
         controller: 停止控制器（可选，青龙版使用）
         save_cookie_callback: Cookie 保存回调
         send_notification: 通知发送回调 (title, content) -> None
+        cloudflare_config: 顶层 cloudflare 配置块（配置文件里与 accounts 同级，
+            可为 None，此时仅使用环境变量）
         script_title: 脚本标题
 
     Returns:
@@ -68,6 +71,7 @@ def run_all_accounts(
                 controller=controller,
                 save_cookie_callback=save_cookie_callback,
                 cf_share=cf_pass_pool,
+                cloudflare_config=cloudflare_config,
             )
 
             if not client.login():
