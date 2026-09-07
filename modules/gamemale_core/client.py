@@ -19,7 +19,11 @@ from .cloudflare import (
     solve_turnstile,
     submit_turnstile_token,
 )
-from .config_utils import _coerce_config_bool, _coerce_config_list
+from .config_utils import (
+    _coerce_config_bool,
+    _coerce_config_list,
+    _merge_cloudflare_configs,
+)
 from .constants import BASE_URL, DDDDOCR_AVAILABLE, DEFAULT_TIMEOUT, ddddocr
 from .credits import CreditsMixin
 from .daily_tasks import DailyTasksMixin
@@ -69,9 +73,10 @@ class GamemaleAutomation(
         self._controller = controller
         self._save_cookie_callback = save_cookie_callback
         self._ocr = None
-        # 顶层 cloudflare 配置块（配置文件里与 accounts 同级，由入口脚本注入）
-        self._cloudflare_config = (
-            dict(cloudflare_config) if isinstance(cloudflare_config, dict) else {}
+        # Cloudflare 配置：账户内局部块非空字段优先于顶层全局块
+        # （两处同结构 {solver, api_key, max_solves}，均未配置时回落环境变量）
+        self._cloudflare_config = _merge_cloudflare_configs(
+            account_config, cloudflare_config,
         )
         # Cloudflare 人机验证解算状态
         self._cf_solved_count = 0
@@ -82,18 +87,23 @@ class GamemaleAutomation(
         self._cf_cookie_names_before: Optional[Set[str]] = None
 
     def _get_cf_max_solves(self) -> int:
-        """读取单次运行允许的解算次数上限（顶层 cloudflare.max_solves，默认 2）。"""
+        """读取单次运行允许的解算次数上限（局部/顶层 cloudflare.max_solves，默认 2）。
+
+        已按“局部优先于全局”合并进 _cloudflare_config。
+        """
         try:
             return int(self._cloudflare_config.get("max_solves"))
         except (TypeError, ValueError):
             return 2
 
     def _get_cloudflare_solver_config(self) -> Tuple[str, str]:
-        """读取 Turnstile 解算服务配置（顶层 cloudflare 块优先，环境变量兜底）。
+        """读取 Turnstile 解算服务配置（局部 > 全局 > 环境变量）。
 
-        顶层配置形态（配置文件里与 accounts 同级，由入口脚本注入）：
-          cloudflare: {solver: ..., api_key: ..., max_solves: N}
-        环境变量：GAMEMALE_CF_SOLVER / GAMEMALE_CF_API_KEY（兼容 CF_SOLVER / CF_API_KEY）
+        配置块统一为 {solver, api_key} 形态（可含 max_solves）：
+          - 账户内局部 cloudflare 块：非空字段优先；
+          - 顶层全局 cloudflare 块（与 accounts 同级，由入口脚本注入）；
+          - 环境变量 GAMEMALE_CF_SOLVER / GAMEMALE_CF_API_KEY
+            （兼容 CF_SOLVER / CF_API_KEY）作为最终兜底。
         """
         solver = str(
             self._cloudflare_config.get("solver")
@@ -249,8 +259,9 @@ class GamemaleAutomation(
                 "检测到 Cloudflare Turnstile 人机验证，但未配置任何解算通道。\n"
                 "请二选一：\n"
                 "  1) 打码平台：在配置文件顶层 cloudflare: {solver, api_key} "
-                "（与 accounts 同级）或环境变量 "
-                "GAMEMALE_CF_SOLVER / GAMEMALE_CF_API_KEY 中填写密钥"
+                "（与 accounts 同级，全局生效）或单个账户内同结构的 cloudflare "
+                "块（局部优先），或在环境变量 GAMEMALE_CF_SOLVER / "
+                "GAMEMALE_CF_API_KEY 中填写密钥"
                 "（支持 2captcha / capsolver / yescaptcha，单次约 ¥0.02~0.05）；\n"
                 "  2) 在浏览器中打开 gamemale.com 完成人机验证后，重新复制完整的 Cookie。",
                 self.account_name,

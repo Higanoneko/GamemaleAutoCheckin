@@ -48,14 +48,24 @@
   Actions` 中添加：
   - `GAMEMALE_CF_SOLVER` = `2captcha` / `capsolver` / `yescaptcha`
   - `GAMEMALE_CF_API_KEY` = 你的平台 API Key
-- **配置文件（config.yaml / config.json 顶层 `cloudflare` 块，与 `accounts` 同级）**：
+- **配置文件（支持 全局 + 账户局部 两档，均为 `cloudflare: {solver, api_key, max_solves}` 结构）**：
+  全局块放在顶层（与 `accounts` 同级，对所有账户生效）：
   ```yaml
   cloudflare:
     solver: "2captcha"      # 2captcha / capsolver / yescaptcha
     api_key: "你的API Key"
     max_solves: 2           # 单次运行最多解算次数（控制成本，默认 2）
   ```
-  （也可写成嵌套对象 `"cloudflare": {"solver": "capsolver", "api_key": "..."}`）
+  账户局部块（可选）：把上面的块复制进某个账户、改缩进即可使用，**局部非空字段
+  优先于全局**，未填写的字段自动回落到全局：
+  ```yaml
+  accounts:
+    - cookie: "你的Cookie"
+      cloudflare:
+        solver: "capsolver"   # 仅该账户改用 capsolver
+        max_solves: 1         # 并限制该账户单次最多打码 1 次
+  ```
+  取值优先级：**账户局部（非空字段）> 顶层全局 > 环境变量 `GAMEMALE_CF_SOLVER` / `GAMEMALE_CF_API_KEY`**。
 
 ### 多账户与打码成本
 
@@ -253,10 +263,10 @@ python gamemale_daily.py --only-online --online-time-minutes 30
 -   `task_exclude_keywords`: **(数组, 可选)**
     -   **说明**: 按任务名或任务描述中的关键词排除任务。例如 `["发帖", "回帖"]`。
 
--   `cloudflare`: **(对象, 可选, 顶层配置，与 `accounts` 同级)**
-    -   **说明**: Cloudflare 人机验证自动解算配置。
-    -   `solver`: **(字符串, 可选)** 解算服务，可选 `2captcha` / `capsolver` / `yescaptcha`。留空表示禁用自动解算。也可通过环境变量 `GAMEMALE_CF_SOLVER` 配置。
-    -   `api_key`: **(字符串, 可选)** 上述打码平台的 API Key。也可通过环境变量 `GAMEMALE_CF_API_KEY` 配置（GitHub Actions 用 Secret 注入）。
+-   `cloudflare`: **(对象, 可选, 支持全局与账户局部两档)**
+    -   **说明**: Cloudflare 人机验证自动解算配置。顶层全局块（与 `accounts` 同级）对所有账户生效；账户内同结构的 `cloudflare` 块为局部覆盖（**局部非空字段优先**，可只覆盖部分字段）。两处均未配置时回落环境变量 `GAMEMALE_CF_SOLVER` / `GAMEMALE_CF_API_KEY`。
+    -   `solver`: **(字符串, 可选)** 解算服务，可选 `2captcha` / `capsolver` / `yescaptcha`。留空表示该层不启用、回落到更低优先级来源。
+    -   `api_key`: **(字符串, 可选)** 上述打码平台的 API Key（GitHub Actions 用 Secret 注入环境变量）。
     -   `max_solves`: **(整数, 可选, 默认为 2)** 单次运行最多自动解算人机验证的次数（按次计费，默认 2 次足够）。
 
 ### `notification` (通知配置)

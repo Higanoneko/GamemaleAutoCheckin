@@ -56,10 +56,12 @@ CONFIG_FILE_NAME = "GameMale_Config.yaml"
 QL_CONFIG_PATHS = ["/ql/data/config", "/ql/config", Path(__file__).parent]
 
 CONFIG_TEMPLATE = """# GameMale 自动签到配置文件
-# Cloudflare Turnstile 人机验证（与 accounts 同级，全局生效）：
-# 命中验证页时通过打码平台自动解算放行（按次计费约 ¥0.02~0.05）。
-# solver: 2captcha / capsolver / yescaptcha；留空则禁用自动解算。
-# 也可用环境变量 GAMEMALE_CF_SOLVER / GAMEMALE_CF_API_KEY 配置
+# Cloudflare Turnstile 人机验证，支持 全局 + 账户局部 两档：
+#   全局：下面顶层的 cloudflare 块（与 accounts 同级），对所有账户生效；
+#   局部（可选）：把顶层 cloudflare 块复制到某个账户内、改缩进即可，
+#   该账户非空字段优先于全局（只覆盖想改的字段，其余回落到全局）。
+# 两处都未配置时，回落到环境变量 GAMEMALE_CF_SOLVER / GAMEMALE_CF_API_KEY。
+# solver: 2captcha / capsolver / yescaptcha；留空则该层不使用。
 cloudflare:
   solver: ""
   api_key: ""
@@ -78,6 +80,11 @@ accounts:
     task_exclude_ids: []
     task_exclude_names: []
     task_exclude_keywords: []
+    # 可选：账户局部 cloudflare（与顶层同结构，局部优先）
+    # cloudflare:
+    #   solver: ""
+    #   api_key: ""
+    #   max_solves: 2
 """
 
 

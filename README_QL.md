@@ -134,14 +134,22 @@ task gamemale_daily_ql.py --only-online --online-time-minutes 30
 | `task_exclude_ids` | 否 | 按任务 ID 排除，例如 `["25"]` |
 | `task_exclude_names` | 否 | 按完整任务名排除，例如 `["每周发帖任务"]` |
 | `task_exclude_keywords` | 否 | 按任务名或描述关键词排除，例如 `["发帖"]` |
-| `cloudflare`（顶层对象） | 否 | Cloudflare 人机验证自动解算配置，与 `accounts` **同级**：`solver` 解算服务（`2captcha` / `capsolver` / `yescaptcha`，留空禁用）、`api_key` 打码平台 Key、`max_solves` 单次运行最多解算次数（默认 `2`）。也可用环境变量 `GAMEMALE_CF_SOLVER` / `GAMEMALE_CF_API_KEY` |
+| `cloudflare`（顶层对象） | 否 | Cloudflare 人机验证自动解算配置，与 `accounts` **同级**（全局，对所有账户生效）：`solver`（`2captcha` / `capsolver` / `yescaptcha`，留空不启用）、`api_key`、`max_solves`（单次最多解算次数，默认 `2`）。也可用环境变量 `GAMEMALE_CF_SOLVER` / `GAMEMALE_CF_API_KEY` |
+| `账户内 cloudflare`（对象，可选） | 否 | 账户**局部**覆盖：把顶层 `cloudflare` 块复制进某个账户、改缩进即可，**局部非空字段优先于全局**，未填字段回落全局。取值优先级：账户局部 > 顶层全局 > 环境变量 |
 
 ```yaml
-# 配置文件顶层（与 accounts 同级）
+# 全局（配置文件顶层，与 accounts 同级）
 cloudflare:
   solver: ""        # 2captcha / capsolver / yescaptcha
   api_key: ""
   max_solves: 2     # 单次运行最多解算次数（控制成本）
+
+accounts:
+  - cookie: "..."
+    # 账户局部覆盖（可选，与顶层同结构）：
+    # cloudflare:
+    #   solver: "capsolver"   # 只改想覆盖的字段即可
+    #   max_solves: 1
 ```
 
 > *注：`cookie` 或 `username + password` 至少提供一组
@@ -268,7 +276,8 @@ A: 这是论坛部署的 Turnstile 验证（返回 "请稍候 / 检查站点连�
 1. **打码平台（稳定）**：在青龙面板 → **环境变量** 添加 `GAMEMALE_CF_SOLVER`
    （`2captcha` / `capsolver` / `yescaptcha`）和 `GAMEMALE_CF_API_KEY`（打码平台
    注册充值后获取，单次仅几分钱）；或在配置文件**顶层**（与 `accounts` 同级）加
-   `cloudflare: {solver, api_key, max_solves}` 块。
+   `cloudflare: {solver, api_key, max_solves}` 全局块。若某个账户要用不同的
+   解算服务/额度，把该块复制进对应账户作为局部覆盖即可（局部优先）。
 2. **手动**：在浏览器中打开 gamemale.com 完成一次验证并登录，重新复制完整 Cookie 填入配置。
 
 > **多账户提示**：同一批账户运行时，脚本共享放行 Cookie——首个账户打码成功后，

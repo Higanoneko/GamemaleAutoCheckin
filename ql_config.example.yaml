@@ -1,17 +1,19 @@
 # GameMale 自动签到配置文件
 # 支持多账户，每个账户可以单独配置
 #
-# Cloudflare Turnstile 人机验证（与 accounts 同级，全局生效）：
-# 命中验证页时通过打码平台自动解算放行（按次计费约 ¥0.02~0.05）：
-# solver 可选: 2captcha / capsolver / yescaptcha（留空则禁用）
-# api_key 在对应平台注册后获取；也可用环境变量 GAMEMALE_CF_SOLVER / GAMEMALE_CF_API_KEY
+# Cloudflare Turnstile 人机验证（全局 + 账户局部两档）：
+#   全局：下面顶层的 cloudflare 块（与 accounts 同级），对所有账户生效。
+#   局部（可选）：把顶层 cloudflare 块复制到某个账户内、改缩进即可；
+#   该账户非空字段优先于全局（只覆盖想改的字段，其余回落到全局）。
+# 两处都未配置时，回落到环境变量 GAMEMALE_CF_SOLVER / GAMEMALE_CF_API_KEY。
+# solver 可选: 2captcha / capsolver / yescaptcha（留空则该层不使用）
 cloudflare:
   solver: ""
   api_key: ""
   max_solves: 2    # 单次运行最多解算次数（控制成本）
 
 accounts:
-  # 账户1 - 启用通知
+  # 账户1 - 启用通知（cloudflare 用全局配置）
   - cookie: "TVj0_2132_nofavfid=1; TVj0_2132_smile=1D1; ..."
     username: "用户1"
     password: "密码1"
@@ -25,7 +27,7 @@ accounts:
     task_exclude_keywords: []   # 按关键词排除，例如 ["发帖"]
     notify_enabled: true         # 发送通知
 
-  # 账户2 - 禁用通知（任务正常执行，但不会在通知中显示结果）
+  # 账户2 - 演示账户局部 cloudflare 覆盖（与顶层同结构，局部优先）
   - cookie: ""
     username: "用户2"
     password: "密码2"
@@ -38,6 +40,10 @@ accounts:
     task_exclude_names: []
     task_exclude_keywords: []
     notify_enabled: false        # 不发送通知
+    cloudflare:                  # 局部块：只覆盖想改的字段，其余回落全局
+      solver: "capsolver"
+      # api_key: ""             # 留空 = 回落全局 api_key
+      max_solves: 1             # 本账户限制单次只打码 1 次
 
   # 更多账户...
   # - cookie: ""

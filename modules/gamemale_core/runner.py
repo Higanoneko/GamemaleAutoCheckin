@@ -28,8 +28,9 @@ def run_all_accounts(
         controller: 停止控制器（可选，青龙版使用）
         save_cookie_callback: Cookie 保存回调
         send_notification: 通知发送回调 (title, content) -> None
-        cloudflare_config: 顶层 cloudflare 配置块（配置文件里与 accounts 同级，
-            可为 None，此时仅使用环境变量）
+        cloudflare_config: 顶层全局 cloudflare 配置块（配置文件里与 accounts 同级）。
+            可为 None（此时仅使用环境变量兜底）；单个账户还可带同结构的局部
+            cloudflare 块，局部非空字段优先于该全局块
         script_title: 脚本标题
 
     Returns:

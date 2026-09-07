@@ -250,6 +250,48 @@ class ChallengeAutoSolveFlowTests(unittest.TestCase):
         self.assertEqual(client._cf_max_solves, 2)
 
 
+class GlobalLocalCloudflareMergeTests(unittest.TestCase):
+    """顶层全局 cloudflare 块 + 账户内局部块（同结构，局部非空字段优先）。"""
+
+    def test_account_local_block_overrides_global(self):
+        client = GamemaleAutomation(
+            {"username": "t", "cloudflare": {"solver": "yescaptcha", "api_key": "local-key"}},
+            cloudflare_config={"solver": "2captcha", "api_key": "global-key", "max_solves": 3},
+        )
+        solver, api_key = client._get_cloudflare_solver_config()
+        self.assertEqual(solver, "yescaptcha")
+        self.assertEqual(api_key, "local-key")
+        self.assertEqual(client._cf_max_solves, 3)  # 局部未覆盖 max_solves → 用全局
+
+    def test_account_local_empty_fields_fall_back_to_global(self):
+        client = GamemaleAutomation(
+            {"username": "t", "cloudflare": {"solver": "", "max_solves": 1}},
+            cloudflare_config={"solver": "2captcha", "api_key": "global-key"},
+        )
+        solver, api_key = client._get_cloudflare_solver_config()
+        self.assertEqual(solver, "2captcha")  # 局部 solver 为空 → 回落全局
+        self.assertEqual(api_key, "global-key")
+        self.assertEqual(client._cf_max_solves, 1)  # 局部 max_solves 非空 → 优先
+
+    def test_account_local_block_without_global(self):
+        client = GamemaleAutomation(
+            {"username": "t", "cloudflare": {"solver": "capsolver", "api_key": "local-key"}},
+        )
+        solver, api_key = client._get_cloudflare_solver_config()
+        self.assertEqual(solver, "capsolver")
+        self.assertEqual(api_key, "local-key")
+
+    def test_invalid_local_block_ignored(self):
+        # 账户内 cloudflare 不是 dict（如误写成字符串）时视为未配置局部
+        client = GamemaleAutomation(
+            {"username": "t", "cloudflare": "capsolver"},
+            cloudflare_config={"solver": "2captcha", "api_key": "global-key"},
+        )
+        solver, api_key = client._get_cloudflare_solver_config()
+        self.assertEqual(solver, "2captcha")
+        self.assertEqual(api_key, "global-key")
+
+
 class SharedPassPoolTests(unittest.TestCase):
     """多账户共享放行 Cookie：第一个账户打码，后续账户复用，避免重复打码。"""
 

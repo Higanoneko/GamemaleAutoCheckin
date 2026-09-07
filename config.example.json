@@ -12,7 +12,12 @@
     "online_refresh_interval_seconds": 900,
     "task_exclude_ids": [],
     "task_exclude_names": [],
-    "task_exclude_keywords": []
+    "task_exclude_keywords": [],
+    "cloudflare": {
+      "solver": "",
+      "api_key": "",
+      "max_solves": 2
+    }
   },
   "cloudflare": {
     "solver": "",
