@@ -2,7 +2,7 @@
 
 高效、健壮的 Gamemale 论坛自动化脚本，基于 API 直接通信和本地验证码识别，支持 GitHub Actions 无人值守运行。
 
-## ✨ 功能特性 (v2.1)
+## ✨ 功能特性 (v2.3)
 
 - 🚀 **性能卓越**: 通过直接 API 调用代替页面抓取，执行速度提升 **70%+**。
 - 🧠 **本地验证码识别**: 集成 `ddddocr`，实现本地、免费、高效的登录验证码识别。
@@ -17,8 +17,64 @@
   - 智能访问用户空间
   - **动态用户打招呼** (新功能!)
 - 🔔 **多渠道通知**: 支持企业微信、Telegram、Email 和控制台输出详细的图文报告。
+- 🛡️ **Cloudflare Turnstile 适配**: 自动识别论坛的人机验证页，通过打码平台（2captcha / capsolver / yescaptcha）自动解算放行，无需人工干预。
 - ⚙️ **集中化配置**: 所有配置通过单个 JSON 对象管理，部署简单。
 - 🕒 **定时执行**: 通过 GitHub Actions 每日自动运行。
+
+## ⚠️ Cloudflare 人机验证适配（重要）
+
+> GameMale 论坛已接入 Cloudflare 防护（边缘 CDN + 源站 Turnstile 人机验证插件
+> `dev8133_cloudflare`）。**没有放行标记的访问会话会被返回 "请稍候 / 检查站点连接
+> 是否安全" 的验证页**，需要浏览器执行 Cloudflare Turnstile 拿到 token 并提交回
+> 论坛后才能继续访问。纯脚本请求（包括本脚本旧版本）都会命中该验证页而全部失败。
+
+本脚本按 **直连 → 打码平台自动解算** 顺序适配：
+
+1. **直连**：总是先直接请求，只有命中验证页才进入下一步（若你的网络/登录 Cookie
+   本身放行，全程零开销）；
+2. **打码平台解算**（可选配置）：命中验证页时自动调用打码平台解算 Turnstile
+   （单次约 ¥0.02~0.05）并提交放行，无需人工干预。
+
+其他保障：每次运行最多解算 `cloudflare_max_solves` 次（默认 2，控制成本）；
+解算成功后会把含放行标记的完整 Cookie 回写配置，后续运行大概率直接放行。
+
+### 方式一：打码平台（付费兜底，稳定可靠）
+
+在 [2captcha](https://2captcha.com)、[capsolver](https://www.capsolver.com/zh) 或
+[yescaptcha](https://www.yescaptcha.com) 任一平台注册并充值少量余额（Turnstile
+单次解算约 ¥0.02~0.05，日常每天 1~2 次几乎可以忽略），然后二选一配置：
+
+- **GitHub Actions（Secret 环境变量）**：在仓库 `Settings -> Secrets and variables ->
+  Actions` 中添加：
+  - `GAMEMALE_CF_SOLVER` = `2captcha` / `capsolver` / `yescaptcha`
+  - `GAMEMALE_CF_API_KEY` = 你的平台 API Key
+- **配置文件（config.json / config.yaml 账户级）**：
+  ```json
+  "cloudflare_solver": "2captcha",
+  "cloudflare_api_key": "你的API Key",
+  "cloudflare_max_solves": 2
+  ```
+  （也可写成嵌套对象 `"cloudflare": {"solver": "capsolver", "api_key": "..."}`）
+
+### 多账户与打码成本
+
+同一批账户运行时脚本内置**放行 Cookie 共享池**：首个遇到验证的账户解算成功后，
+其余账户会自动复用其放行标记（日志会出现"复用共享的 Cloudflare 放行 Cookie"），
+**通常整批账户每次运行只需打码 1 次**，而不是每账户 1 次。共享仅限人机验证
+放行标记（自动过滤 saltkey 等会话 Cookie），绝不混入登录态，跨账户安全。
+
+解算成功后，含放行标记的完整 Cookie 会自动回写各账户配置（日志"已把含放行标记
+的 Cookie 回写到配置"），下次运行大概率直接放行、零打码。仅当放行标记失效
+（服务端过期等）时才会再次解算，且受 `cloudflare_max_solves` 上限保护。
+
+### 方式二：提供"已过验证"的完整 Cookie（零成本，适合本地/手动更新）
+
+在浏览器中打开 gamemale.com 完成一次人机验证并保持登录，然后按上面「登录方式」
+的步骤**复制完整的 Cookie 字符串**填入配置。若该 Cookie 仍带论坛的放行标记，
+脚本可直接访问而无需解算；放行标记过期后再用方式一或重新复制。
+
+> 若两种方式都未配置，脚本会在日志中明确提示检测到 Cloudflare 人机验证，
+> 而不会静默地把验证页当作正常页面处理。
 
 ## 登录方式
 
@@ -195,6 +251,15 @@ python gamemale_daily.py --only-online --online-time-minutes 30
 
 -   `task_exclude_keywords`: **(数组, 可选)**
     -   **说明**: 按任务名或任务描述中的关键词排除任务。例如 `["发帖", "回帖"]`。
+
+-   `cloudflare_solver`: **(字符串, 可选)**
+    -   **说明**: Cloudflare 人机验证解算服务，可选 `2captcha` / `capsolver` / `yescaptcha`。留空表示禁用自动解算。也可通过环境变量 `GAMEMALE_CF_SOLVER` 配置。
+
+-   `cloudflare_api_key`: **(字符串, 可选)**
+    -   **说明**: 上述打码平台的 API Key。也可通过环境变量 `GAMEMALE_CF_API_KEY` 配置（GitHub Actions 用 Secret 注入）。
+
+-   `cloudflare_max_solves`: **(整数, 可选, 默认为 2)**
+    -   **说明**: 单次运行最多自动解算人机验证的次数（按次计费，默认 2 次足够）。
 
 ### `notification` (通知配置)
 

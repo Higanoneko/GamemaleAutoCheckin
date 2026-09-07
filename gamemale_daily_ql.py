@@ -14,6 +14,7 @@ import argparse
 import signal
 import sys
 from pathlib import Path
+from typing import Any, Dict, List
 
 from modules.gamemale_core import (
     GamemaleAutomation,
@@ -40,7 +41,7 @@ except ImportError:
 
 
 # ============== 信号处理 ==============
-def signal_handler(signum, frame):
+def signal_handler(signum: int, frame: Any) -> None:
     """处理停止信号 — 仅设标志，不调 sys.exit"""
     stop_controller.request_stop()
     print("\n⚠️ 收到停止信号，正在优雅退出...")
@@ -68,10 +69,17 @@ accounts:
     task_exclude_ids: []
     task_exclude_names: []
     task_exclude_keywords: []
+    # Cloudflare Turnstile 人机验证（论坛已启用）：
+    # 命中验证页时通过打码平台自动解算放行（按次计费约 ¥0.02~0.05）。
+    # solver: 2captcha / capsolver / yescaptcha；留空则禁用自动解算。
+    # 也可用环境变量 GAMEMALE_CF_SOLVER / GAMEMALE_CF_API_KEY 配置
+    cloudflare_solver: ""
+    cloudflare_api_key: ""
+    cloudflare_max_solves: 2
 """
 
 
-def get_config_file_path():
+def get_config_file_path() -> Path:
     """获取配置文件完整路径"""
     for path in QL_CONFIG_PATHS:
         path = Path(path)
@@ -80,7 +88,7 @@ def get_config_file_path():
     return Path(__file__).parent / CONFIG_FILE_NAME
 
 
-def load_accounts():
+def load_accounts() -> List[Dict[str, Any]]:
     """
     加载账户配置
     优先级: 配置文件 > GAMEMALE_ACCOUNTS > GAMEMALE_COOKIE > APP_CONFIG_JSON
@@ -135,7 +143,7 @@ def load_accounts():
     return []
 
 
-def parse_args():
+def parse_args() -> argparse.Namespace:
     """解析本次运行的命令行参数。"""
     parser = argparse.ArgumentParser(description="Gamemale 每日任务自动化脚本 - 青龙面板版")
     parser.add_argument(
@@ -169,7 +177,10 @@ def parse_args():
     return parser.parse_args()
 
 
-def apply_runtime_overrides(accounts, args):
+def apply_runtime_overrides(
+    accounts: List[Dict[str, Any]],
+    args: argparse.Namespace,
+) -> List[Dict[str, Any]]:
     """应用命令行参数覆盖；只有显式参数才允许挂机。"""
     online_seconds = args.online_time_seconds
     if online_seconds is None and args.online_time_minutes is not None:
@@ -215,7 +226,7 @@ def save_cookie_to_config(client: GamemaleAutomation) -> bool:
         return False
 
 
-def send_notification(title, content):
+def send_notification(title: str, content: str) -> None:
     """发送通知"""
     if QL_NOTIFY_AVAILABLE:
         try:
@@ -227,7 +238,7 @@ def send_notification(title, content):
 
 
 # ============== 主程序 ==============
-def main():
+def main() -> None:
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(message)s",

@@ -16,6 +16,7 @@ from modules.gamemale_core.core import (
     _resolve_gamemale_url,
     GamemaleAutomation,
 )
+from modules.gamemale_core.parsers import _extract_login_error_message
 
 
 class LoginHelperTests(unittest.TestCase):
@@ -68,10 +69,9 @@ class LoginHelperTests(unittest.TestCase):
         self.assertEqual(_clean_captcha_text(" A b-3_9 "), "Ab39")
 
     def test_extract_login_error_message_strips_scripts(self):
-        client = GamemaleAutomation({"username": "test"})
         response_text = "<root><![CDATA[bad captcha<script>hideWindow()</script>]]></root>"
 
-        self.assertEqual(client._extract_login_error_message(response_text), "bad captcha")
+        self.assertEqual(_extract_login_error_message(response_text), "bad captcha")
 
     def test_parse_new_task_list_extracts_applyable_tasks(self):
         page_html = """

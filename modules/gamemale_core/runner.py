@@ -6,7 +6,9 @@ import time
 from typing import Any, Callable, Dict, List, Optional
 
 from .client import GamemaleAutomation
-from .logging_utils import log_error, log_info, log_success, log_warning
+from .cloudflare import CloudflarePassPool
+from .config_utils import _coerce_config_bool
+from .logging_utils import log_error, log_info, log_section, log_success, log_warning
 from .stop_controller import StopController
 
 
@@ -30,15 +32,16 @@ def run_all_accounts(
     Returns:
         失败的账户数（0 = 全部成功）
     """
-    print("=" * 60)
-    print(script_title)
-    print("=" * 60)
-    print(f"\n共加载 {len(accounts)} 个账户\n")
+    log_section(script_title)
+    log_info(f"共加载 {len(accounts)} 个账户")
 
     all_reports: List[str] = []
     success_accounts = 0
     failed_accounts = 0
     notify_skipped_accounts = 0
+    # 多账户共享的 Cloudflare 放行 Cookie 池：
+    # 第一个完成人机验证的账户会把放行标记共享给后续账户，避免重复打码
+    cf_pass_pool = CloudflarePassPool()
 
     for i, account_config in enumerate(accounts):
         if controller and controller.is_stopped():
@@ -46,13 +49,11 @@ def run_all_accounts(
             break
 
         account_name = account_config.get("username", f"账户{i+1}")
-        notify_enabled = account_config.get("notify_enabled", True)
+        notify_enabled = _coerce_config_bool(account_config.get("notify_enabled"), True)
 
-        print(f"\n{'#'*60}")
-        print(f"# 开始处理: {account_name} ({i+1}/{len(accounts)})")
+        log_section(f"开始处理: {account_name} ({i+1}/{len(accounts)})")
         if not notify_enabled:
-            print("# 通知: 已禁用")
-        print(f"{'#'*60}")
+            log_info("通知: 已禁用", account_name)
 
         try:
             if not account_config.get("cookie") and not (
@@ -66,6 +67,7 @@ def run_all_accounts(
                 account_config, i,
                 controller=controller,
                 save_cookie_callback=save_cookie_callback,
+                cf_share=cf_pass_pool,
             )
 
             if not client.login():
@@ -96,30 +98,29 @@ def run_all_accounts(
             if controller and controller.is_stopped():
                 continue
             delay = random.uniform(5, 10)
-            print(f"\n等待 {delay:.1f} 秒后处理下一个账户...")
+            log_info(f"等待 {delay:.1f} 秒后处理下一个账户...", account_name)
             if controller:
                 controller.interruptible_sleep(delay)
             else:
                 time.sleep(delay)
 
     # 汇总报告
-    print("\n" + "=" * 60)
-    print("执行汇总")
-    print("=" * 60)
-    print(f"成功: {success_accounts} 个账户")
-    print(f"失败: {failed_accounts} 个账户")
+    log_section("执行汇总")
+    log_success(f"成功: {success_accounts} 个账户")
+    if failed_accounts > 0:
+        log_error(f"失败: {failed_accounts} 个账户")
+    else:
+        log_info(f"失败: {failed_accounts} 个账户")
     if notify_skipped_accounts > 0:
-        print(f"通知已禁用: {notify_skipped_accounts} 个账户")
-    print(f"总计: {len(accounts)} 个账户")
+        log_info(f"通知已禁用: {notify_skipped_accounts} 个账户")
+    log_info(f"总计: {len(accounts)} 个账户")
 
     if all_reports and send_notification:
         summary_title = f"Gamemale 每日任务 - {success_accounts}/{len(accounts)} 成功"
         summary_content = "\n".join(all_reports)
 
-        print("\n" + "=" * 60)
-        print("详细报告")
-        print("=" * 60)
-        print(summary_content)
+        log_section("详细报告")
+        log_info(summary_content)
 
         send_notification(summary_title, summary_content)
 

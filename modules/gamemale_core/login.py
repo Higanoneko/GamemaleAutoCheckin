@@ -2,18 +2,20 @@
 """Login and formhash handling for the shared automation client."""
 
 import random
-import re
 from typing import Optional, Tuple
 
-from bs4 import BeautifulSoup
-
-from .constants import BASE_URL, DDDDOCR_AVAILABLE, DEFAULT_TIMEOUT, MAX_LOGIN_RETRIES
+from .constants import BASE_URL, DDDDOCR_AVAILABLE, MAX_LOGIN_RETRIES
 from .logging_utils import log_error, log_info, log_section, log_success, log_warning
 from .parsers import (
     _clean_captcha_text,
     _extract_ajax_content,
+    _extract_formhash,
+    _extract_login_error_message,
+    _extract_login_form_parameters,
     _extract_seccode_image_url,
-    _extract_seccodehash,
+    _is_login_form_session_alive,
+    _is_login_response_success,
+    _is_profile_page_logged_in,
 )
 
 
@@ -22,24 +24,14 @@ class LoginMixin:
         """访问个人资料页，确认当前 Session 已经处于登录状态。"""
         try:
             test_url = f'{BASE_URL}/home.php?mod=space&do=profile'
-            response = self.session.get(test_url, allow_redirects=False, timeout=DEFAULT_TIMEOUT)
+            # 走统一 _send_request：若命中 Cloudflare 验证页会自动解算并重放
+            response = self._send_request('GET', test_url, allow_redirects=False)
             if response.status_code != 200:
                 return False
-
-            page_text = response.text
-            if '登录' in page_text and '请先登录' in page_text:
-                return False
-            return any(token in page_text for token in ('我的资料', '个人空间', 'uid='))
+            return _is_profile_page_logged_in(response.text)
         except Exception as e:
             log_warning(f"登录状态验证出错: {e}", self.account_name)
             return False
-    def _extract_login_error_message(self, response_text: str) -> str:
-        """从登录失败的 Discuz AJAX 响应中提取可读错误信息。"""
-        content = _extract_ajax_content(response_text)
-        content = re.split(r'<script\b', content, maxsplit=1, flags=re.IGNORECASE)[0]
-        message = BeautifulSoup(content, 'html.parser').get_text(" ", strip=True)
-        message = re.sub(r'\s+', ' ', message)
-        return message or "未知登录错误"
     def login(self) -> bool:
         """统一的登录管理"""
         log_section("登录流程", self.account_name)
@@ -51,6 +43,11 @@ class LoginMixin:
             if self._login_with_cookie():
                 log_success("Cookie 登录成功", self.account_name)
                 login_successful = True
+                # 若本次解算过 Cloudflare 验证，会话 Cookie 已包含放行标记
+                # （可能同时刷新了 saltkey/sid），回写配置以便下次直接放行
+                if self._cf_solved_count > 0 and self._save_cookie_callback:
+                    log_info("回写包含 Cloudflare 放行标记的 Cookie 到配置", self.account_name)
+                    self._save_cookie_callback(self)
             else:
                 self.session.cookies.clear()
                 log_info("Cookie 已过期或无效，尝试密码登录", self.account_name)
@@ -137,12 +134,12 @@ class LoginMixin:
                     'POST', login_url, data=payload,
                     headers={'X-Requested-With': 'XMLHttpRequest'},
                 )
-                if 'succeed' in login_response.text or '欢迎您回来' in login_response.text:
+                if _is_login_response_success(login_response.text):
                     if self._verify_logged_in_session():
                         return True
                     raise ValueError("登录响应成功，但未能验证登录状态")
 
-                raise ValueError(self._extract_login_error_message(login_response.text))
+                raise ValueError(_extract_login_error_message(login_response.text))
 
             except Exception as e:
                 log_warning(f"登录尝试失败: {e}", self.account_name)
@@ -161,28 +158,11 @@ class LoginMixin:
 
         html_content = _extract_ajax_content(response.text)
 
-        if '欢迎您回来' in html_content or 'succeedhandle_login' in html_content:
+        if _is_login_form_session_alive(html_content):
             log_info("检测到已登录状态，无需重新登录", self.account_name)
             return "ALREADY_LOGGED_IN", None, None, None
 
-        soup = BeautifulSoup(html_content, 'html.parser')
-
-        action_tag = soup.find('form', {'name': 'login'})
-        if not action_tag or not action_tag.has_attr('action'):
-            raise ValueError("未找到登录表单的action URL")
-        action_url = action_tag['action']
-
-        loginhash_match = re.search(r'loginhash=(\w+)', action_url)
-        if not loginhash_match:
-            raise ValueError("未找到loginhash")
-        loginhash = loginhash_match.group(1)
-
-        formhash_tag = soup.find('input', {'name': 'formhash'})
-        if not formhash_tag or not formhash_tag.has_attr('value'):
-            raise ValueError("未找到formhash")
-        formhash = formhash_tag['value']
-
-        seccodehash = _extract_seccodehash(html_content, soup)
+        loginhash, formhash, seccodehash = _extract_login_form_parameters(html_content)
 
         js_url = f"{BASE_URL}/misc.php?mod=seccode&action=update&idhash={seccodehash}&inajax=1"
         js_response = self._send_request('GET', js_url, headers=ajax_headers)
@@ -213,14 +193,10 @@ class LoginMixin:
         try:
             home_url = f'{BASE_URL}/home.php?mod=spacecp'
             response = self._send_request('GET', home_url)
-            formhash_match = (
-                re.search(r'formhash" value="([a-f0-9]+)"', response.text)
-                or re.search(r'formhash=([a-f0-9]+)', response.text)
-                or re.search(r'"formhash":"([a-f0-9]+)"', response.text)
-            )
+            formhash = _extract_formhash(response.text)
 
-            if formhash_match:
-                self.formhash = formhash_match.group(1)
+            if formhash:
+                self.formhash = formhash
                 log_success("FormHash 获取成功", self.account_name)
                 return True
             else:

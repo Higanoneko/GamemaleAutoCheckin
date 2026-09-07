@@ -2,14 +2,38 @@
 """Check and accept newly available forum missions."""
 
 import random
-import re
 from typing import Dict, List, Optional, Set, Tuple
-
-from bs4 import BeautifulSoup
 
 from .constants import TASK_DOING_URL, TASK_LIST_URL
 from .logging_utils import log_error, log_info, log_success, log_warning
-from .parsers import _parse_doing_task_list, _parse_new_task_list
+from .parsers import (
+    _classify_task_apply_message,
+    _classify_task_draw_message,
+    _extract_page_message,
+    _parse_doing_task_list,
+    _parse_new_task_list,
+)
+
+
+def _task_exclusion_reason(
+    task: Dict[str, str],
+    exclude_ids: Set[str],
+    exclude_names: Set[str],
+    exclude_keywords: List[str],
+) -> Optional[str]:
+    """判断任务是否命中排除规则，命中返回原因文本（纯函数）。"""
+    task_id = task.get("id", "")
+    task_name = task.get("name", "")
+    searchable_text = f"{task_name}\n{task.get('description', '')}".casefold()
+
+    if task_id in exclude_ids:
+        return f"ID {task_id} 在排除列表中"
+    if task_name.casefold() in exclude_names:
+        return f"任务名“{task_name}”在排除列表中"
+    for keyword in exclude_keywords:
+        if keyword and keyword in searchable_text:
+            return f"命中排除关键词“{keyword}”"
+    return None
 
 
 class MissionsMixin:
@@ -48,35 +72,11 @@ class MissionsMixin:
         ]
         exclude_keywords.extend(item.casefold() for item in generic_excludes if not item.isdigit())
         return exclude_ids, exclude_names, exclude_keywords
-    def _get_task_exclusion_reason(self, task: Dict[str, str]) -> Optional[str]:
-        """判断任务是否命中排除规则。"""
-        exclude_ids, exclude_names, exclude_keywords = self._get_task_exclusions()
-        task_id = task.get("id", "")
-        task_name = task.get("name", "")
-        searchable_text = f"{task_name}\n{task.get('description', '')}".casefold()
 
-        if task_id in exclude_ids:
-            return f"ID {task_id} 在排除列表中"
-        if task_name.casefold() in exclude_names:
-            return f"任务名“{task_name}”在排除列表中"
-        for keyword in exclude_keywords:
-            if keyword and keyword in searchable_text:
-                return f"命中排除关键词“{keyword}”"
-        return None
-    def _extract_page_message(self, page_text: str) -> str:
-        """从普通提示页中提取简短可读消息。"""
-        soup = BeautifulSoup(page_text, 'html.parser')
-        message_node = (
-            soup.select_one('#messagetext')
-            or soup.select_one('.alert_info')
-            or soup.select_one('.alert_right')
-        )
-        message = (
-            message_node.get_text(" ", strip=True)
-            if message_node
-            else soup.get_text(" ", strip=True)
-        )
-        return re.sub(r'\s+', ' ', message).strip()
+    def _get_task_exclusion_reason(self, task: Dict[str, str]) -> Optional[str]:
+        """判断任务是否命中排除规则（读取配置后交给纯函数判定）。"""
+        exclude_ids, exclude_names, exclude_keywords = self._get_task_exclusions()
+        return _task_exclusion_reason(task, exclude_ids, exclude_names, exclude_keywords)
     def get_new_tasks(self) -> List[Dict[str, str]]:
         """获取当前可接取的新任务列表。"""
         response = self._send_request('GET', TASK_LIST_URL)
@@ -140,13 +140,9 @@ class MissionsMixin:
                         task["apply_url"],
                         headers={'Referer': TASK_LIST_URL},
                     )
-                    message = self._extract_page_message(response.text)
-                    if any(token in message for token in (
-                        "任务已成功申请",
-                        "任务申请成功",
-                        "任务已成功完成",
-                        "任务完成",
-                    )):
+                    message = _extract_page_message(response.text)
+                    outcome = _classify_task_apply_message(message)
+                    if outcome == "accepted":
                         accepted_count += 1
                         self.mission_results.append({
                             "id": task["id"],
@@ -155,7 +151,7 @@ class MissionsMixin:
                             "message": message,
                         })
                         log_success(f"任务接取成功: {task['name']} (ID:{task['id']})", self.account_name)
-                    elif "已经申请" in message or "正在进行" in message:
+                    elif outcome == "already_doing":
                         accepted_count += 1
                         self.mission_results.append({
                             "id": task["id"],
@@ -258,13 +254,8 @@ class MissionsMixin:
                         mission["draw_url"],
                         headers={'Referer': TASK_DOING_URL},
                     )
-                    message = self._extract_page_message(response.text)
-                    if any(token in message for token in (
-                        "任务已成功完成",
-                        "任务完成",
-                        "您将收到奖励通知",
-                        "奖励",
-                    )):
+                    message = _extract_page_message(response.text)
+                    if _classify_task_draw_message(message) == "completed":
                         completed_count += 1
                         self.mission_results.append({
                             "id": mission["id"],

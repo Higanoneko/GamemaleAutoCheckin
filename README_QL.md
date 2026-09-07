@@ -10,6 +10,7 @@
 - 集成青龙面板通知系统
 - 支持 Cookie 登录和密码登录
 - **首次运行自动创建配置文件模板**
+- **Cloudflare Turnstile 人机验证自动适配**：命中论坛验证页时自动通过打码平台解算放行，无人值守
 
 ## 快速部署
 
@@ -133,6 +134,9 @@ task gamemale_daily_ql.py --only-online --online-time-minutes 30
 | `task_exclude_ids` | 否 | 按任务 ID 排除，例如 `["25"]` |
 | `task_exclude_names` | 否 | 按完整任务名排除，例如 `["每周发帖任务"]` |
 | `task_exclude_keywords` | 否 | 按任务名或描述关键词排除，例如 `["发帖"]` |
+| `cloudflare_solver` | 否 | 打码平台解算服务：`2captcha` / `capsolver` / `yescaptcha`，留空禁用；也可用环境变量 `GAMEMALE_CF_SOLVER` |
+| `cloudflare_api_key` | 否 | 打码平台 API Key；也可用环境变量 `GAMEMALE_CF_API_KEY` |
+| `cloudflare_max_solves` | 否 | 单次运行最多解算次数（按次计费），默认 `2` |
 
 > *注：`cookie` 或 `username + password` 至少提供一组
 
@@ -252,6 +256,19 @@ Gamemale 每日任务自动化脚本 - 青龙面板版
 ### Q: 配置文件在哪里？
 A: 首次运行脚本会自动创建。位置在青龙面板「配置文件」选项卡中，文件名为 `gamemale.json`。
 
+### Q: 论坛加了 Cloudflare 人机验证，脚本跑不动了怎么办？
+A: 这是论坛部署的 Turnstile 验证（返回 "请稍候 / 检查站点连接是否安全" 页面），
+命中时脚本会自动通过打码平台解算放行，请按需配置：
+1. **打码平台（稳定）**：在青龙面板 → **环境变量** 添加 `GAMEMALE_CF_SOLVER`
+   （`2captcha` / `capsolver` / `yescaptcha`）和 `GAMEMALE_CF_API_KEY`（打码平台
+   注册充值后获取，单次仅几分钱）；或在配置文件中给账户填 `cloudflare_solver` /
+   `cloudflare_api_key`。
+2. **手动**：在浏览器中打开 gamemale.com 完成一次验证并登录，重新复制完整 Cookie 填入配置。
+
+> **多账户提示**：同一批账户运行时，脚本共享放行 Cookie——首个账户打码成功后，
+> 后续账户自动复用（日志"复用共享的 Cloudflare 放行 Cookie"），通常整批账户每次
+> 运行只打码 1 次；解算后的放行 Cookie 会自动回写各账户配置，下次运行直接放行。
+
 ### Q: Cookie 多久失效？
 A: 一般 30 天左右，建议同时配置密码以便自动登录。
 
@@ -271,6 +288,8 @@ A: 设置 `"auto_exchange_enabled": false` 可禁用血液自动兑换。
 
 ## 更新日志
 
+- **v2.3** - Cloudflare 人机验证适配：自动识别验证页并通过打码平台解算放行，多账户共享放行 Cookie；会话放行后自动回写 Cookie
+- **v2.2** - Cloudflare Turnstile 人机验证适配：自动识别论坛验证页并通过打码平台解算放行
 - **v2.1** - 支持配置文件方式，首次运行自动创建模板
 - **v2.0** - 青龙面板适配，支持多账户
 - **v1.0** - 初始版本，支持 GitHub Actions

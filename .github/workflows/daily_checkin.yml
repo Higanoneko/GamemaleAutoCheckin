@@ -49,6 +49,8 @@ jobs:
           APP_CONFIG_JSON: ${{ secrets.APP_CONFIG_JSON }}
           GAMEMALE_ACCOUNTS: ${{ secrets.GAMEMALE_ACCOUNTS }}
           GAMEMALE_COOKIE: ${{ secrets.GAMEMALE_COOKIE }}
+          GAMEMALE_CF_SOLVER: ${{ secrets.GAMEMALE_CF_SOLVER }}
+          GAMEMALE_CF_API_KEY: ${{ secrets.GAMEMALE_CF_API_KEY }}
         run: python gamemale_daily.py
 
       - name: Report failure

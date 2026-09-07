@@ -14,6 +14,7 @@ import argparse
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional
 
 import requests
 
@@ -48,6 +49,13 @@ accounts:
     task_exclude_ids: []
     task_exclude_names: []
     task_exclude_keywords: []
+    # Cloudflare Turnstile 人机验证（论坛已启用）：
+    # 命中验证页时通过打码平台自动解算放行（按次计费约 ¥0.02~0.05）。
+    # solver: 2captcha / capsolver / yescaptcha；留空则禁用自动解算。
+    # 也可用环境变量 GAMEMALE_CF_SOLVER / GAMEMALE_CF_API_KEY 配置
+    cloudflare_solver: ""
+    cloudflare_api_key: ""
+    cloudflare_max_solves: 2
 
 notification:
   enabled: false
@@ -67,7 +75,7 @@ notification:
 """
 
 
-def load_config():
+def load_config() -> Dict[str, Any]:
     """
     加载配置
     优先级: config.yaml > APP_CONFIG_JSON > config.json
@@ -100,7 +108,7 @@ def load_config():
     sys.exit(1)
 
 
-def parse_args():
+def parse_args() -> argparse.Namespace:
     """解析本次运行的命令行参数。"""
     parser = argparse.ArgumentParser(description="Gamemale 每日任务自动化脚本")
     parser.add_argument(
@@ -134,7 +142,10 @@ def parse_args():
     return parser.parse_args()
 
 
-def apply_runtime_overrides(accounts, args):
+def apply_runtime_overrides(
+    accounts: List[Dict[str, Any]],
+    args: argparse.Namespace,
+) -> List[Dict[str, Any]]:
     """应用命令行参数覆盖；只有显式参数才允许挂机。"""
     online_seconds = args.online_time_seconds
     if online_seconds is None and args.online_time_minutes is not None:
@@ -181,7 +192,9 @@ def save_cookie_to_config(client: GamemaleAutomation) -> bool:
 
 
 # ============== 通知 ==============
-def _create_notifier(config):
+def _create_notifier(
+    config: Dict[str, Any],
+) -> Optional[Callable[[str, str], None]]:
     """根据配置创建通知回调"""
     nc = config.get("notification", {})
     if not nc.get("enabled", False):
@@ -189,7 +202,7 @@ def _create_notifier(config):
 
     ntype = nc.get("type", "console")
 
-    def send(title, content):
+    def send(title: str, content: str) -> None:
         try:
             if ntype == "telegram":
                 tc = nc.get("telegram", {})
@@ -223,7 +236,7 @@ def _create_notifier(config):
 
 
 # ============== 主程序 ==============
-def main():
+def main() -> None:
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(message)s",

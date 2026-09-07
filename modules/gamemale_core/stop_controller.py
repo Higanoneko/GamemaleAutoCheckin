@@ -12,10 +12,10 @@ class StopController:
     event 被 set()，wait() 立即返回，实现可中断的等待。
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._stop_event = threading.Event()
 
-    def request_stop(self):
+    def request_stop(self) -> None:
         """请求停止，所有 interruptible_sleep 立即唤醒"""
         self._stop_event.set()
 
@@ -23,16 +23,16 @@ class StopController:
         """检查是否已请求停止"""
         return self._stop_event.is_set()
 
-    def interruptible_sleep(self, seconds: float):
+    def interruptible_sleep(self, seconds: float) -> None:
         """
         可中断的等待。等效于 time.sleep(seconds)，
         但当 request_stop() 被调用时会立即返回。
         """
         self._stop_event.wait(timeout=seconds)
 
-    def reset(self):
+    def reset(self) -> None:
         """重置停止状态"""
         self._stop_event.clear()
 
 
-stop_controller = StopController()
+stop_controller: StopController = StopController()

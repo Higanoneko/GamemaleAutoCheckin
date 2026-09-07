@@ -1,14 +1,13 @@
 # -*- coding: utf-8 -*-
 """Daily task orchestration, sign-in, and lottery actions."""
 
-import json
 import random
-import re
 import time
 from typing import Dict, Optional
 
 from .constants import BASE_URL, POKE_TARGET_COUNT
 from .logging_utils import log_error, log_info, log_section, log_success, log_warning
+from .parsers import _classify_sign_response, _parse_lottery_response
 from .social import interact_with_blogs
 
 
@@ -68,8 +67,7 @@ class DailyTasksMixin:
         if not self._is_stopped():
             log_info("执行任务: 震惊互动", self.account_name)
             successful_uids, processed_uids = interact_with_blogs(
-                self.session, self.account_name,
-                controller=self._controller,
+                self, self.account_name,
             )
             task_results["震惊互动"] = len(successful_uids) > 0
 
@@ -122,11 +120,11 @@ class DailyTasksMixin:
             response = self._send_request(
                 'GET', url, headers={'X-Requested-With': 'XMLHttpRequest'}
             )
-            text = response.text
-            if 'succeed' in text or '签到成功' in text:
+            status = _classify_sign_response(response.text)
+            if status == "success":
                 log_success("签到成功", self.account_name)
                 return True
-            if '已签' in text:
+            if status == "already":
                 log_info("今日已签到", self.account_name)
                 return True
             log_warning("签到状态未知", self.account_name)
@@ -147,24 +145,18 @@ class DailyTasksMixin:
                 'GET', url, headers={'X-Requested-With': 'XMLHttpRequest'}
             )
 
-            try:
-                res_json = response.json()
-                tip_name = res_json.get("tipname")
-                tip_value = res_json.get("tipvalue", "")
-
-                if tip_name == "ok":
-                    clean_tip_value = re.sub(r'<.*?>', '', tip_value).strip()
-                    log_success(f"抽奖成功: {clean_tip_value}", self.account_name)
-                    return True
-                elif not tip_name:
-                    log_info("今日已抽奖", self.account_name)
-                    return True
-                else:
-                    log_warning(f"抽奖返回: {tip_name} - {tip_value}", self.account_name)
-                    return False
-            except (ValueError, json.JSONDecodeError):
-                log_warning(f"抽奖结果未知: {response.text[:100]}", self.account_name)
-                return False
+            status, payload = _parse_lottery_response(response.text)
+            if status == "won":
+                log_success(f"抽奖成功: {payload}", self.account_name)
+                return True
+            if status == "already":
+                log_info("今日已抽奖", self.account_name)
+                return True
+            if status == "failed":
+                log_warning(f"抽奖返回: {payload}", self.account_name)
+            else:
+                log_warning(f"抽奖结果未知: {payload}", self.account_name)
+            return False
 
         except Exception as e:
             log_error(f"抽奖失败: {e}", self.account_name)

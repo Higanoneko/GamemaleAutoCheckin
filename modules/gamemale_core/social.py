@@ -2,20 +2,26 @@
 """Blog interaction and social actions."""
 
 import random
-import re
 import time
-from typing import List, Optional, Set, Tuple
+from typing import Any, List, Optional, Set, Tuple
 
-import requests
-from bs4 import BeautifulSoup
-
-from .constants import BASE_URL, BLOG_INTERACTION_TARGET, BLOG_MAX_PAGES, DEFAULT_TIMEOUT
+from .constants import BASE_URL, BLOG_INTERACTION_TARGET, BLOG_MAX_PAGES
 from .logging_utils import log_error, log_info, log_section, log_success, log_warning
+from .parsers import (
+    _extract_blog_uid,
+    _extract_blog_urls,
+    _extract_poke_form,
+    _extract_shock_click_url,
+    _is_blog_unavailable,
+    _is_poke_already_sent,
+    _is_poke_send_success,
+    _is_shock_click_success,
+)
 from .stop_controller import StopController
 
 
 def interact_with_blogs(
-    session: requests.Session,
+    client: Any,
     account_name: str = "",
     target_interactions: int = BLOG_INTERACTION_TARGET,
     max_pages_to_scan: int = BLOG_MAX_PAGES,
@@ -24,9 +30,33 @@ def interact_with_blogs(
     """
     持续查找并与日志互动，直到达到目标次数。
 
+    Args:
+        client: GamemaleAutomation 实例（所有请求经其统一发送，
+            可自动处理 Cloudflare 人机验证页）
+
     返回: (成功互动的 UID 列表, 已处理的 UID 列表)
     """
     log_section(f"日志互动 (目标: {target_interactions}次)", account_name)
+
+    if controller is None and getattr(client, "_controller", None) is not None:
+        controller = client._controller
+
+    def is_stopped() -> bool:
+        """统一的中断检查：优先使用显式传入的 controller。"""
+        if controller is not None:
+            return controller.is_stopped()
+        return False
+
+    def interruptible_sleep(seconds: float) -> None:
+        """统一的可中断等待：显式 controller 优先，其次 client._sleep()。"""
+        if controller is not None:
+            controller.interruptible_sleep(seconds)
+            return
+        sleeper = getattr(client, "_sleep", None)
+        if callable(sleeper):
+            sleeper(seconds)
+        else:
+            time.sleep(seconds)
 
     successful_user_ids: Set[str] = set()
     processed_user_ids: Set[str] = set()
@@ -34,7 +64,7 @@ def interact_with_blogs(
 
     page_num = 1
     while len(successful_user_ids) < target_interactions and page_num <= max_pages_to_scan:
-        if controller and controller.is_stopped():
+        if is_stopped():
             log_warning("收到停止信号，中断日志互动", account_name)
             break
 
@@ -42,17 +72,16 @@ def interact_with_blogs(
 
         try:
             current_url = f"{BASE_URL}/home.php?mod=space&do=blog&view=all&page={page_num}"
-            response = session.get(current_url, timeout=DEFAULT_TIMEOUT)
-            response.raise_for_status()
+            response = client._send_request('GET', current_url)
 
-            href_matches = re.findall(r'href="([^"]*blog-\d+-\d+\.html[^"]*)"', response.text)
+            href_matches = _extract_blog_urls(response.text)
             if not href_matches:
                 log_info("当前页未找到日志链接，停止扫描", account_name)
                 break
 
             new_blogs_found_on_page = 0
             for href in href_matches:
-                if controller and controller.is_stopped():
+                if is_stopped():
                     log_warning("收到停止信号，中断日志互动", account_name)
                     break
 
@@ -64,55 +93,38 @@ def interact_with_blogs(
                 processed_blog_urls.add(full_url)
 
                 try:
-                    uid_match = re.search(r'blog-(\d+)-', full_url)
-                    if not uid_match:
+                    uid = _extract_blog_uid(full_url)
+                    if not uid:
                         continue
 
-                    uid = uid_match.group(1)
                     processed_user_ids.add(uid)
 
-                    page_response = session.get(full_url, timeout=DEFAULT_TIMEOUT)
-                    page_response.raise_for_status()
+                    page_response = client._send_request('GET', full_url)
                     page_text = page_response.text
 
-                    if "您不能访问当前内容" in page_text or "指定的主题不存在或已被删除或正在被审核" in page_text:
+                    if _is_blog_unavailable(page_text):
                         continue
 
-                    shock_button = BeautifulSoup(page_text, 'html.parser').select_one(
-                        'a[id*="click_blogid_"][id$="_1"]'
-                    )
-                    if not shock_button:
+                    click_url = _extract_shock_click_url(page_text)
+                    if not click_url:
                         continue
-
-                    click_url_raw = shock_button.get('href')
-                    click_url = (
-                        (click_url_raw.replace('&amp;', '&') + '&inajax=1')
-                        if '&inajax=1' not in click_url_raw
-                        else click_url_raw.replace('&amp;', '&')
-                    )
-                    if not click_url.startswith('http'):
-                        click_url = f"{BASE_URL}/{click_url.lstrip('/')}"
 
                     ajax_headers = {'Referer': full_url, 'X-Requested-With': 'XMLHttpRequest'}
-                    click_response = session.get(click_url, headers=ajax_headers, timeout=DEFAULT_TIMEOUT)
+                    click_response = client._send_request('GET', click_url, headers=ajax_headers)
                     response_text = click_response.text.strip()
 
-                    if 'succeed' in response_text or '表态成功' in response_text:
+                    if _is_shock_click_success(response_text):
                         log_success(
                             f"震惊成功 (UID:{uid}) [{len(successful_user_ids)+1}/{target_interactions}]",
                             account_name,
                         )
                         successful_user_ids.add(uid)
 
-                    if controller and controller.is_stopped():
+                    if is_stopped():
                         break
 
                     # 可中断的等待
-                    delay = random.uniform(2, 5)
-                    if controller:
-                        controller.interruptible_sleep(delay)
-                    else:
-                        time.sleep(delay)
+                    interruptible_sleep(random.uniform(2, 5))
 
                     if len(successful_user_ids) >= target_interactions:
                         break
@@ -123,7 +135,7 @@ def interact_with_blogs(
             if len(successful_user_ids) >= target_interactions:
                 break
 
-            if controller and controller.is_stopped():
+            if is_stopped():
                 break
 
             if new_blogs_found_on_page == 0:
@@ -139,7 +151,6 @@ def interact_with_blogs(
     return list(successful_user_ids), list(processed_user_ids)
 
 
-
 class SocialMixin:
     def quick_visit_spaces(self, user_ids: List[str]) -> bool:
         """快速空间访问"""
@@ -151,7 +162,9 @@ class SocialMixin:
                 break
             try:
                 url = f"{BASE_URL}/space-uid-{uid}.html"
-                if self.session.head(url, allow_redirects=True, timeout=DEFAULT_TIMEOUT).status_code == 200:
+                # 用 GET 而非 HEAD：验证页检测依赖响应正文，HEAD 无正文无法触发
+                # Cloudflare 自动放行；且访问计数/可达性判定均以 200 为准。
+                if self._send_request('GET', url).status_code == 200:
                     success += 1
                 self._sleep(1)
             except Exception:
@@ -159,7 +172,7 @@ class SocialMixin:
         log_info(f"空间访问: {success}/{len(user_ids)} 成功", self.account_name)
         return success > 0
     def quick_poke_users(self, user_ids: List[str]) -> bool:
-        """对一组用户执行\"打招呼\"操作"""
+        """对一组用户执行"打招呼"操作"""
         if not user_ids:
             return True
         success_count = 0
@@ -175,28 +188,16 @@ class SocialMixin:
                 headers = {'X-Requested-With': 'XMLHttpRequest'}
                 response = self._send_request('GET', get_url, headers=headers)
 
-                if '今天您已经打过招呼了' in response.text:
+                if _is_poke_already_sent(response.text):
                     success_count += 1
                     continue
 
-                content_match = re.search(r'<!\[CDATA\[(.*)\]\]>', response.text, re.DOTALL)
-                if not content_match:
+                poke_form = _extract_poke_form(response.text, uid)
+                if not poke_form:
                     continue
-
-                soup = BeautifulSoup(content_match.group(1), 'html.parser')
-                form = soup.find('form', id=f'pokeform_{uid}')
-                if not form:
-                    continue
-
-                action_url_raw = form['action']
-                action_url = action_url_raw.replace('&amp;', '&')
-                if not action_url.startswith('http'):
-                    action_url = f"{BASE_URL}/{action_url.lstrip('/')}"
-
-                formhash = form.find('input', {'name': 'formhash'})['value']
 
                 payload = {
-                    'formhash': formhash,
+                    'formhash': poke_form["formhash"],
                     'handlekey': f'a_poke_{uid}',
                     'pokeuid': uid,
                     'pokesubmit': 'true',
@@ -204,15 +205,17 @@ class SocialMixin:
                     'note': '',
                 }
 
-                final_headers = self.session.headers.copy()
-                final_headers.update({
+                # 会话级 UA/Referer 由统一 Session 自动附带，这里只传本次请求头
+                final_headers = {
                     'X-Requested-With': 'XMLHttpRequest',
                     'Referer': f'{BASE_URL}/space-uid-{uid}.html',
-                })
+                }
 
-                post_response = self._send_request('POST', action_url, data=payload, headers=final_headers)
+                post_response = self._send_request(
+                    'POST', poke_form["action"], data=payload, headers=final_headers
+                )
 
-                if '已发送' in post_response.text and '下次访问时会收到通知' in post_response.text:
+                if _is_poke_send_success(post_response.text):
                     success_count += 1
             except Exception:
                 pass
@@ -221,4 +224,3 @@ class SocialMixin:
 
         log_info(f"打招呼完成: {success_count}/{len(user_ids)} 成功", self.account_name)
         return success_count > 0
-

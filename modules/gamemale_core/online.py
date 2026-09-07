@@ -33,7 +33,10 @@ class OnlineTimeMixin:
         ], default=900)
         interval_seconds = max(1, interval_seconds)
 
-        target_url = str(self.config.get("online_time_url") or self.config.get("hang_time_url") or f"{BASE_URL}/forum.php")
+        target_url = self._get_config_str(
+            ["online_time_url", "hang_time_url"],
+            default=f"{BASE_URL}/forum.php",
+        )
         return enabled, duration_seconds, interval_seconds, target_url
 
     def quick_accumulate_online_time(self) -> bool:
