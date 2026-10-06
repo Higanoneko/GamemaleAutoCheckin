@@ -3,10 +3,11 @@
 
 import json
 import re
+from dataclasses import dataclass
 from typing import Dict, List, Optional, Set, Tuple
 from urllib.parse import parse_qs, urljoin, urlparse
 
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Tag
 
 from .constants import BASE_URL
 
@@ -32,9 +33,12 @@ def _extract_seccodehash(html_content: str, soup: BeautifulSoup) -> str:
     seccodehash_match = re.search(r"updateseccode\(['\"]([a-zA-Z0-9]+)['\"]", html_content)
     seccodehash = seccodehash_match.group(1) if seccodehash_match else None
     if not seccodehash:
+        hidden = soup.find('input', attrs={'name': 'seccodehash'})
+        seccodehash = str(hidden.get('value', '')) if isinstance(hidden, Tag) else None
+    if not seccodehash:
         seccode_tag = soup.find(id=re.compile(r'^seccode_'))
-        if seccode_tag and seccode_tag.has_attr('id'):
-            seccodehash = seccode_tag['id'].replace('seccode_', '', 1)
+        if isinstance(seccode_tag, Tag) and seccode_tag.has_attr('id'):
+            seccodehash = str(seccode_tag['id']).replace('seccode_', '', 1)
     if not seccodehash:
         raise ValueError("未找到seccodehash")
     return seccodehash
@@ -156,9 +160,72 @@ def _is_credit_exchange_success(response_text: str) -> bool:
 
 def _is_profile_page_logged_in(page_text: str) -> bool:
     """从个人资料页文本判断当前 Session 是否处于登录态。"""
-    if '登录' in page_text and '请先登录' in page_text:
-        return False
-    return any(token in page_text for token in ('我的资料', '个人空间', 'uid='))
+    return parse_login_state(page_text) == "logged_in"
+
+
+def extract_logged_in_uid(page_text: str) -> Optional[int]:
+    """只读取脚本中的当前会话 UID，公开空间链接不代表当前身份。"""
+    soup = BeautifulSoup(page_text, 'html.parser')
+    for script in soup.find_all('script'):
+        match = re.search(r"\bdiscuz_uid\s*=\s*['\"]?(\d+)['\"]?\s*[;,]", script.get_text())
+        if match:
+            return int(match.group(1))
+    return None
+
+
+def parse_login_state(page_text: str) -> str:
+    """返回 logged_in / guest / unknown；缺少标记不能推断 Cookie 过期。"""
+    uid = extract_logged_in_uid(page_text)
+    if uid is not None:
+        return "logged_in" if uid > 0 else "guest"
+    soup = BeautifulSoup(page_text, 'html.parser')
+    for link in soup.find_all('a', href=True):
+        query = parse_qs(urlparse(link['href']).query)
+        if query.get('action') == ['logout'] and query.get('formhash'):
+            return "logged_in"
+    if '请先登录' in soup.get_text() or soup.find('form', attrs={'name': 'login'}):
+        return "guest"
+    return "unknown"
+
+
+def is_login_redirect(url: str) -> bool:
+    parsed = urlparse(_resolve_gamemale_url(url))
+    query = parse_qs(parsed.query)
+    return parsed.path.endswith('/member.php') and query.get('mod') == ['logging'] and query.get('action') == ['login']
+
+
+def parse_cookie_header(raw: str) -> Dict[str, str]:
+    """归一化浏览器 Cookie 头和 JSON 导出，非法输入明确报错。"""
+    text = raw.strip()
+    text = re.sub(r'^Cookie\s*:\s*', '', text, flags=re.IGNORECASE)
+    if not text:
+        return {}
+    if text.startswith('{'):
+        try:
+            data = json.loads(text)
+        except ValueError:
+            raise ValueError("Cookie JSON 格式无效") from None
+        if not isinstance(data, dict) or any(not isinstance(v, str) for v in data.values()):
+            raise ValueError("Cookie JSON 必须是名称到字符串值的对象")
+        items = list(data.items())
+    else:
+        if len(text) > 1 and text[0] == text[-1] and text[0] in ('"', "'"):
+            text = text[1:-1]
+        items = []
+        for part in re.split(r';|\r?\n', text):
+            if not part.strip():
+                continue
+            name, separator, value = part.partition('=')
+            if not separator:
+                raise ValueError("Cookie 项缺少等号")
+            items.append((name, value))
+    cookies: Dict[str, str] = {}
+    for name, value in items:
+        name, value = name.strip(), value.strip()
+        if not name or re.search(r'[\s;=:\x00-\x1f]', name) or re.search(r'[;\r\n\x00]', value):
+            raise ValueError("Cookie 名称或值无效")
+        cookies[name] = value
+    return cookies
 
 
 def _is_login_form_session_alive(html_content: str) -> bool:
@@ -167,17 +234,30 @@ def _is_login_form_session_alive(html_content: str) -> bool:
 
 
 def _extract_login_form_parameters(html_content: str) -> Tuple[str, str, str]:
-    """从登录弹窗 HTML 提取 (loginhash, formhash, seccodehash)。
+    """兼容旧接口：该接口仍要求表单带验证码。"""
+    form = parse_login_form(html_content)
+    if not form.seccodehash:
+        raise ValueError("未找到seccodehash")
+    return form.loginhash, form.formhash, form.seccodehash
 
-    Raises:
-        ValueError: 页面缺少 action URL / loginhash / formhash / seccodehash。
-    """
+
+@dataclass(frozen=True)
+class LoginForm:
+    loginhash: str
+    formhash: str
+    seccodehash: Optional[str]
+    modid: str
+    captcha_required: bool
+
+
+def parse_login_form(html_content: str) -> LoginForm:
+    """解析验证码是否必需及动态参数，不读取客户端或配置状态。"""
     soup = BeautifulSoup(html_content, 'html.parser')
 
     action_tag = soup.find('form', {'name': 'login'})
-    if not action_tag or not action_tag.has_attr('action'):
+    if not isinstance(action_tag, Tag) or not action_tag.has_attr('action'):
         raise ValueError("未找到登录表单的action URL")
-    action_url = action_tag['action']
+    action_url = str(action_tag['action'])
 
     loginhash_match = re.search(r'loginhash=(\w+)', action_url)
     if not loginhash_match:
@@ -185,12 +265,30 @@ def _extract_login_form_parameters(html_content: str) -> Tuple[str, str, str]:
     loginhash = loginhash_match.group(1)
 
     formhash_tag = soup.find('input', {'name': 'formhash'})
-    if not formhash_tag or not formhash_tag.has_attr('value'):
+    if not isinstance(formhash_tag, Tag) or not formhash_tag.has_attr('value'):
         raise ValueError("未找到formhash")
-    formhash = formhash_tag['value']
+    formhash = str(formhash_tag['value'])
 
-    seccodehash = _extract_seccodehash(html_content, soup)
-    return loginhash, formhash, seccodehash
+    try:
+        seccodehash = _extract_seccodehash(html_content, soup)
+    except ValueError:
+        seccodehash = None
+    captcha_required = bool(seccodehash or soup.find('input', attrs={'name': 'seccodeverify'}))
+    if captcha_required and not seccodehash:
+        raise ValueError("表单要求验证码，但缺少seccodehash")
+    hidden_modid = soup.find('input', attrs={'name': 'seccodemodid'})
+    modid_match = re.search(r"updateseccode\([^,]+,.*?,\s*['\"]([\w:]+)['\"]\s*\)", html_content, re.DOTALL)
+    modid = str(hidden_modid.get('value', '')) if isinstance(hidden_modid, Tag) else modid_match.group(1) if modid_match else ''
+    return LoginForm(loginhash, str(formhash), seccodehash, modid or 'member::logging', captcha_required)
+
+
+def is_captcha_check_success(response_text: str) -> bool:
+    return _extract_ajax_content(response_text).strip() == 'succeed'
+
+
+def is_terminal_login_error(response_text: str) -> bool:
+    message = _extract_login_error_message(response_text)
+    return any(token in message for token in ('密码错误', '用户名或密码错误', '账户被锁定', '登录失败次数过多', '安全问题'))
 
 
 def _extract_formhash(page_text: str) -> Optional[str]:
@@ -303,14 +401,14 @@ def _extract_credit_exchange_error(response_text: str) -> Optional[str]:
 
 def _parse_credit_value_int(credit_value: str) -> int:
     """把“xx 单位”形态的积分值解析为整数（默认形态 “0 滴”）。"""
-    return int(credit_value.split()[0])
+    return int(credit_value.split()[0].replace(',', ''))
 
 
 def _parse_task_usage_table(page_text: str) -> List[Dict[str, str]]:
     """解析“任务总次数统计”表（table.dt），跳过表头行。"""
     soup = BeautifulSoup(page_text, 'html.parser')
     table = soup.find('table', class_='dt')
-    if not table:
+    if not isinstance(table, Tag):
         return []
 
     task_data: List[Dict[str, str]] = []
@@ -329,13 +427,29 @@ def _parse_task_usage_table(page_text: str) -> List[Dict[str, str]]:
 
 def _extract_blog_urls(page_text: str) -> List[str]:
     """从日志列表页提取所有 blog 详情页 URL（原文 href，未解析相对链接）。"""
-    return re.findall(r'href="([^"]*blog-\d+-\d+\.html[^"]*)"', page_text)
+    soup = BeautifulSoup(page_text, 'html.parser')
+    return [str(link['href']) for link in soup.find_all('a', href=True) if blog_identity(str(link['href']))]
 
 
 def _extract_blog_uid(full_url: str) -> Optional[str]:
     """从日志详情 URL 提取博主 UID（形如 blog-123-1.html）。"""
-    match = re.search(r'blog-(\d+)-', full_url)
-    return match.group(1) if match else None
+    identity = blog_identity(full_url)
+    return identity[0] if identity else None
+
+
+def blog_identity(url: str) -> Optional[Tuple[str, str]]:
+    """同一日志的 SEO/查询参数 URL 使用同一个去重标识。"""
+    parsed = urlparse(_resolve_gamemale_url(url))
+    if parsed.hostname not in ('www.gamemale.com', 'gamemale.com'):
+        return None
+    match = re.search(r'blog-(\d+)-(\d+)\.html', parsed.path)
+    if match:
+        return match.group(1), match.group(2)
+    query = parse_qs(parsed.query)
+    uid, blog_id = query.get('uid', [''])[0], query.get('id', [''])[0]
+    if query.get('do') == ['blog'] and uid.isdigit() and blog_id.isdigit():
+        return uid, blog_id
+    return None
 
 
 def _is_blog_unavailable(page_text: str) -> bool:
@@ -353,7 +467,7 @@ def _extract_shock_click_url(page_text: str) -> Optional[str]:
     )
     if not shock_button or not shock_button.has_attr('href'):
         return None
-    click_url_raw = shock_button['href']
+    click_url_raw = str(shock_button['href'])
     click_url = click_url_raw.replace('&amp;', '&')
     if '&inajax=1' not in click_url:
         click_url += '&inajax=1'
@@ -367,6 +481,17 @@ def _is_shock_click_success(response_text: str) -> bool:
     return 'succeed' in response_text or '表态成功' in response_text
 
 
+def classify_shock_response(response_text: str) -> str:
+    """重复操作不代表今日完成额度；失败与未知单独统计。"""
+    if '已表过态' in response_text or '已表态' in response_text:
+        return 'already_done'
+    if _is_shock_click_success(response_text):
+        return 'success'
+    if any(token in response_text for token in ('失败', '错误', '请先登录', '无权')):
+        return 'failed'
+    return 'unknown'
+
+
 def _extract_poke_form(response_text: str, uid: str) -> Optional[Dict[str, str]]:
     """从打招呼弹窗 AJAX 响应中解析提交表单，返回 {action, formhash}。"""
     content_match = re.search(r'<!\[CDATA\[(.*)\]\]>', response_text, re.DOTALL)
@@ -374,15 +499,15 @@ def _extract_poke_form(response_text: str, uid: str) -> Optional[Dict[str, str]]
         return None
     soup = BeautifulSoup(content_match.group(1), 'html.parser')
     form = soup.find('form', id=f'pokeform_{uid}')
-    if not form or not form.has_attr('action'):
+    if not isinstance(form, Tag) or not form.has_attr('action'):
         return None
-    action_url = form['action'].replace('&amp;', '&')
+    action_url = str(form['action']).replace('&amp;', '&')
     if not action_url.startswith('http'):
         action_url = f"{BASE_URL}/{action_url.lstrip('/')}"
     formhash_tag = form.find('input', {'name': 'formhash'})
-    if not formhash_tag or not formhash_tag.has_attr('value'):
+    if not isinstance(formhash_tag, Tag) or not formhash_tag.has_attr('value'):
         return None
-    return {"action": action_url, "formhash": formhash_tag['value']}
+    return {"action": action_url, "formhash": str(formhash_tag['value'])}
 
 
 def _is_poke_already_sent(response_text: str) -> bool:

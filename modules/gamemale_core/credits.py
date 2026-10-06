@@ -18,8 +18,11 @@ class CreditsMixin:
     def _get_credits(self) -> Tuple[Dict[str, str], str]:
         """获取所有积分"""
         credit_page_url = f'{BASE_URL}/home.php?mod=spacecp&ac=credit&op=base'
-        response = self._send_request('GET', credit_page_url)
-        return _parse_credit_list(response.text), credit_page_url
+        response = self._send_request('GET', credit_page_url, safe_to_retry=True)
+        credits = _parse_credit_list(response.text)
+        if not credits:
+            raise ValueError("未解析到积分，请检查登录态或页面结构")
+        return credits, credit_page_url
     def get_user_credits_and_exchange(self) -> Tuple[Dict[str, str], Optional[bool]]:
         """获取用户积分并执行血液兑换"""
         log_info("获取积分并检查兑换...", self.account_name)
@@ -34,7 +37,10 @@ class CreditsMixin:
                 log_info("自动兑换功能已禁用", self.account_name)
                 return credits_data, None
 
-            blood_value = _parse_credit_value_int(credits_data.get("血液", "0 滴"))
+            if '血液' not in credits_data:
+                log_error("未解析到血液余额，无法判断兑换条件", self.account_name)
+                return credits_data, False
+            blood_value = _parse_credit_value_int(credits_data['血液'])
 
             if blood_value > BLOOD_EXCHANGE_THRESHOLD:
                 password = self.config.get("password")
@@ -90,7 +96,7 @@ class CreditsMixin:
                 f'{BASE_URL}/home.php?mod=spacecp&ac=credit'
                 f'&op=log&suboperation=creditrulelog'
             )
-            response = self._send_request('GET', rewards_url)
+            response = self._send_request('GET', rewards_url, safe_to_retry=True)
             return _parse_task_usage_table(response.text)
 
         except Exception as e:

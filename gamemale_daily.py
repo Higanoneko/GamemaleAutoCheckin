@@ -18,6 +18,9 @@ from typing import Any, Callable, Dict, List, Optional
 
 import requests
 
+from modules.gamemale_core.configuration import load_runtime_config, create_cookie_saver
+from modules.gamemale_core.runtime import add_runtime_arguments, apply_runtime_overrides, configuration_diagnostics
+
 from modules.gamemale_core import (
     GamemaleAutomation,
     run_all_accounts,
@@ -55,6 +58,9 @@ accounts:
     auto_exchange: true
     auto_accept_tasks: true
     auto_complete_tasks: true
+    captcha_max_retries: 3
+    captcha_precheck: true
+    asset_history_enabled: true
     online_time_minutes: 0
     online_refresh_interval_seconds: 900
     task_exclude_ids: []
@@ -85,119 +91,28 @@ notification:
 
 
 def load_config() -> Dict[str, Any]:
-    """
-    加载配置
-    优先级: config.yaml > APP_CONFIG_JSON > config.json
-    """
+    """通过共享加载器读取配置，缺少配置时生成模板。"""
     config_path = SCRIPT_DIR / CONFIG_FILE_NAME
-    if config_path.exists() and YAML_AVAILABLE:
-        with open(config_path, 'r', encoding='utf-8') as f:
-            return yaml.safe_load(f)
-
-    config_json_str = os.environ.get("APP_CONFIG_JSON")
-    if config_json_str:
-        config = json.loads(config_json_str)
-        if "gamemale" in config and "accounts" not in config:
-            config["accounts"] = [config["gamemale"]]
+    config = load_runtime_config(config_path, SCRIPT_DIR / "config.json")
+    if config:
         return config
-
-    json_path = SCRIPT_DIR / "config.json"
-    if json_path.exists():
-        with open(json_path, "r", encoding="utf-8") as f:
-            config = json.load(f)
-            if "gamemale" in config and "accounts" not in config:
-                config["accounts"] = [config["gamemale"]]
-            return config
-
-    # 创建模板
-    with open(config_path, 'w', encoding='utf-8') as f:
-        f.write(CONFIG_TEMPLATE)
+    config_path.write_text(CONFIG_TEMPLATE, encoding="utf-8")
     print(f"首次运行，已创建配置文件: {config_path}")
-    print("请编辑 config.yaml 填写账户信息后重新运行")
-    sys.exit(1)
+    raise ValueError("请填写账户信息后重新运行")
 
 
 def parse_args() -> argparse.Namespace:
-    """解析本次运行的命令行参数。"""
+    """解析本次运行的参数。"""
     parser = argparse.ArgumentParser(description="Gamemale 每日任务自动化脚本")
-    parser.add_argument(
-        "--online-time-minutes",
-        type=int,
-        default=None,
-        help="设置挂机总时长（分钟），需配合 --enable-online 或 --only-online",
-    )
-    parser.add_argument(
-        "--online-time-seconds",
-        type=int,
-        default=None,
-        help="设置挂机总时长（秒），需配合 --enable-online 或 --only-online",
-    )
-    parser.add_argument(
-        "--online-refresh-interval-seconds",
-        type=int,
-        default=None,
-        help="本次运行的挂机刷新间隔（秒），默认 900",
-    )
-    parser.add_argument(
-        "--enable-online",
-        action="store_true",
-        help="启用挂机刷新；未传时忽略配置文件中的挂机相关设置",
-    )
-    parser.add_argument(
-        "--only-online",
-        action="store_true",
-        help="仅执行挂机刷新任务，不执行签到、抽奖、任务、日志互动和兑换",
-    )
+    add_runtime_arguments(parser)
     return parser.parse_args()
 
 
-def apply_runtime_overrides(
-    accounts: List[Dict[str, Any]],
-    args: argparse.Namespace,
-) -> List[Dict[str, Any]]:
-    """应用命令行参数覆盖；只有显式参数才允许挂机。"""
-    online_seconds = args.online_time_seconds
-    if online_seconds is None and args.online_time_minutes is not None:
-        online_seconds = args.online_time_minutes * 60
-
-    online_runtime_enabled = args.enable_online or args.only_online
-
-    for account in accounts:
-        account["online_runtime_enabled"] = online_runtime_enabled
-        if args.only_online:
-            account["only_online"] = True
-        if online_runtime_enabled and online_seconds is not None:
-            account["online_time_seconds"] = max(0, online_seconds)
-            account.pop("online_time_minutes", None)
-        if online_runtime_enabled and args.online_refresh_interval_seconds is not None:
-            account["online_refresh_interval_seconds"] = max(1, args.online_refresh_interval_seconds)
-
-    return accounts
-
-
 def save_cookie_to_config(client: GamemaleAutomation) -> bool:
-    """将 cookie 保存到配置文件"""
-    if not YAML_AVAILABLE:
-        return False
-    try:
-        config_path = SCRIPT_DIR / CONFIG_FILE_NAME
-        if not config_path.exists():
-            return False
-        with open(config_path, 'r', encoding='utf-8') as f:
-            config = yaml.safe_load(f)
-        if not config or client.account_index >= len(config.get("accounts", [])):
-            return False
-        new_cookie = client.extract_cookies_string()
-        if not new_cookie:
-            return False
-        config["accounts"][client.account_index]["cookie"] = new_cookie
-        with open(config_path, 'w', encoding='utf-8') as f:
-            yaml.dump(config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
-        print("✅ Cookie 已自动更新到配置文件")
-        return True
-    except Exception as e:
-        print(f"保存 Cookie 失败: {e}")
-        return False
+    """兼容旧接口，新主流程捕获配置来源后使用共享写入器。"""
+    config = load_config()
+    saver = create_cookie_saver(config, SCRIPT_DIR / CONFIG_FILE_NAME, Path(__file__).parent / "config.json")
+    return saver(client) if saver else False
 
 
 # ============== 通知 ==============
@@ -252,18 +167,33 @@ def main() -> None:
         datefmt="%H:%M:%S",
     )
     args = parse_args()
-    config = load_config()
-    accounts = config.get("accounts", [])
-    if not accounts:
-        print("错误：未找到账户配置")
+    try:
+        config = load_runtime_config(SCRIPT_DIR / CONFIG_FILE_NAME, SCRIPT_DIR / "config.json") if args.check or args.check_config else load_config()
+        accounts = config.get("accounts", [])
+        if args.check_config:
+            valid, lines = configuration_diagnostics(config, os.environ)
+            print("\n".join(lines))
+            if not valid:
+                sys.exit(1)
+            return
+        if not accounts:
+            config_path = SCRIPT_DIR / CONFIG_FILE_NAME
+            if not config_path.exists() and not args.check:
+                config_path.parent.mkdir(parents=True, exist_ok=True)
+                config_path.write_text(CONFIG_TEMPLATE, encoding="utf-8")
+                print(f"已创建配置模板: {config_path}")
+            raise ValueError("未找到账户配置，请填写配置文件或环境变量")
+        accounts = apply_runtime_overrides(accounts, args)
+    except (ValueError, OSError) as error:
+        print(f"配置错误: {error}")
         sys.exit(1)
-    accounts = apply_runtime_overrides(accounts, args)
 
     failed = run_all_accounts(
         accounts,
-        save_cookie_callback=save_cookie_to_config,
-        send_notification=_create_notifier(config),
+        save_cookie_callback=create_cookie_saver(config, SCRIPT_DIR / CONFIG_FILE_NAME, Path(__file__).parent / "config.json"),
+        send_notification=None if args.check else _create_notifier(config),
         cloudflare_config=config.get("cloudflare"),
+        asset_state_path=Path(__file__).parent / ".gamemale-state" / "assets.json",
         script_title="Gamemale 每日任务自动化脚本",
     )
     if failed > 0:

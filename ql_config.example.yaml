@@ -19,6 +19,9 @@ accounts:
     password: "密码1"
     auto_exchange: true  # 是否自动兑换血液为旅程
     auto_accept_tasks: true     # 是否自动接取新任务
+    captcha_max_retries: 3       # 每次表单的验证码识别预算（1-8）
+    captcha_precheck: true       # 登录提交前由服务器确认验证码
+    asset_history_enabled: true # 按已验证 UID 保存资产历史
     auto_complete_tasks: true   # 是否自动领取已完成任务奖励
     online_time_minutes: 0      # 挂机总时长（分钟）
     online_refresh_interval_seconds: 900  # 刷新间隔（秒）
@@ -33,6 +36,9 @@ accounts:
     password: "密码2"
     auto_exchange: true
     auto_accept_tasks: true
+    captcha_max_retries: 3       # 每次表单的验证码识别预算（1-8）
+    captcha_precheck: true       # 登录提交前由服务器确认验证码
+    asset_history_enabled: true # 按已验证 UID 保存资产历史
     auto_complete_tasks: true
     online_time_minutes: 0
     online_refresh_interval_seconds: 900

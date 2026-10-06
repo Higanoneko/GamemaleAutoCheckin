@@ -4,6 +4,7 @@
 import unittest
 from unittest.mock import Mock, patch
 
+import requests
 from requests.cookies import RequestsCookieJar
 
 from modules.gamemale_core import cloudflare
@@ -35,6 +36,64 @@ turnstile.ready(function () {
 
 NORMAL_HTML = """<html><head><title>GameMale 论坛</title></head>
 <body><form><input type="hidden" name="formhash" value="a1b2c3d4" /></form></body></html>"""
+
+
+class HttpBoundaryTests(unittest.TestCase):
+    def test_only_explicit_reads_retry_an_uncertain_timeout(self):
+        for safe_read, expected_calls in ((False, 1), (True, 2)):
+            with self.subTest(safe_read=safe_read):
+                client = GamemaleAutomation({"username": "test"})
+                client.session = Mock()
+                client.session.request.side_effect = [requests.Timeout(), Mock(
+                    text=NORMAL_HTML, status_code=200, raise_for_status=lambda: None,
+                )]
+                with patch.object(client, "_sleep"):
+                    if safe_read:
+                        client._send_request("GET", "https://www.gamemale.com/forum.php", safe_to_retry=True)
+                    else:
+                        with self.assertRaises(requests.Timeout):
+                            client._send_request("GET", "https://www.gamemale.com/plugin.php?ac=getaward")
+                self.assertEqual(client.session.request.call_count, expected_calls)
+
+    def test_stop_during_retry_prevents_another_request(self):
+        from modules.gamemale_core.stop_controller import StopController
+        controller = StopController()
+        client = GamemaleAutomation({"username": "test"}, controller=controller)
+        client.session = Mock()
+        client.session.request.side_effect = requests.Timeout()
+        with patch.object(client, "_sleep", side_effect=lambda _: controller.request_stop()):
+            with self.assertRaises(cloudflare.CloudflareInterrupted):
+                client._send_request("GET", "https://www.gamemale.com/forum.php", safe_to_retry=True)
+        self.assertEqual(client.session.request.call_count, 1)
+
+    def test_non_200_challenges_are_resolved_before_http_errors(self):
+        for status in (403, 503):
+            with self.subTest(status=status):
+                response = requests.Response()
+                response.status_code = status
+                response.url = "https://www.gamemale.com/forum.php"
+                response._content = CHALLENGE_HTML.encode("utf-8")
+                response.encoding = "utf-8"
+                client = GamemaleAutomation({"username": "test"})
+                client.session = Mock()
+                client.session.request.side_effect = [response, Mock(
+                    text=NORMAL_HTML, status_code=200, raise_for_status=lambda: None,
+                )]
+                with patch.object(client, "_resolve_cloudflare_challenge", return_value=True):
+                    result = client._send_request("GET", response.url)
+                self.assertEqual(result.text, NORMAL_HTML)
+
+    def test_plain_forbidden_is_not_sent_to_solver(self):
+        response = requests.Response()
+        response.status_code = 403
+        response._content = b"Forbidden"
+        client = GamemaleAutomation({"username": "test"})
+        client.session = Mock()
+        client.session.request.return_value = response
+        with patch.object(client, "_resolve_cloudflare_challenge") as resolve:
+            with self.assertRaises(requests.HTTPError):
+                client._send_request("GET", "https://www.gamemale.com/forum.php")
+            resolve.assert_not_called()
 
 
 class ChallengeDetectionTests(unittest.TestCase):
@@ -197,9 +256,8 @@ class ChallengeAutoSolveFlowTests(unittest.TestCase):
     def test_send_request_without_solver_config_does_not_replay(self):
         client = self._make_client()
 
-        response = client._send_request("GET", "https://www.gamemale.com/forum.php")
-
-        self.assertEqual(response.text, CHALLENGE_HTML)
+        with self.assertRaises(cloudflare.CloudflareChallengeError):
+            client._send_request("GET", "https://www.gamemale.com/forum.php")
         self.assertEqual(len(client.session.calls), 1)
         self.assertEqual(client._cf_solved_count, 0)
 
@@ -210,10 +268,10 @@ class ChallengeAutoSolveFlowTests(unittest.TestCase):
             cf_config={"solver": "capsolver", "api_key": "k", "max_solves": 1},
         )
 
-        response = client._send_request("GET", "https://www.gamemale.com/forum.php")
+        with self.assertRaises(cloudflare.CloudflareChallengeError):
+            client._send_request("GET", "https://www.gamemale.com/forum.php")
 
-        # 第一次命中挑战 → 解算 → 重放仍命中挑战 → 解算次数已达上限 → 返回验证页
-        self.assertEqual(response.text, CHALLENGE_HTML)
+        # 重放仍命中挑战：预算耗尽，明确失败，不能把验证页当成空任务列表。
         self.assertEqual(client._cf_solved_count, 1)
         self.assertEqual(len(client.session.calls), 2)
 

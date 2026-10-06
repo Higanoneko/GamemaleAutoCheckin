@@ -42,3 +42,6 @@ GameMale_Config.yaml
 
 # Runtime artifacts
 captcha.png
+
+# Local account asset snapshots
+.gamemale-state/

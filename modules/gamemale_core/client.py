@@ -3,11 +3,13 @@
 
 import os
 import time
+from importlib import import_module
 from typing import Any, Callable, Dict, Iterable, List, Optional, Set, Tuple
 
 import requests
 
 from .cloudflare import (
+    CloudflareChallengeError,
     CloudflareInterrupted,
     CloudflarePassPool,
     CloudflareSolverError,
@@ -67,6 +69,7 @@ class GamemaleAutomation(
         self.session = create_session()
         self.formhash: Optional[str] = None
         self.is_logged_in = False
+        self.uid: Optional[int] = None
         self.mission_results: List[Dict[str, str]] = []
         self.mission_summary: Dict[str, int] = {}
         self.online_time_summary: Dict[str, object] = {}
@@ -142,33 +145,56 @@ class GamemaleAutomation(
 
     def _init_ocr(self) -> bool:
         """延迟初始化 OCR"""
-        if self._ocr is None and DDDDOCR_AVAILABLE and ddddocr is not None:
-            self._ocr = ddddocr.DdddOcr(show_ad=False)
+        if self._ocr is None and DDDDOCR_AVAILABLE:
+            try:
+                module = ddddocr if ddddocr is not None else import_module('ddddocr')
+                self._ocr = module.DdddOcr(show_ad=False)
+            except (ImportError, OSError):
+                log_error('OCR 依赖无法加载，请安装适用于当前 Python/平台的 requirements-ocr.txt', self.account_name)
+                return False
         return self._ocr is not None
 
-    def _send_request(self, method: str, url: str, **kwargs: Any) -> requests.Response:
-        """统一的请求发送方法，带默认超时与 Cloudflare 验证页自动处理。
+    def _send_request(
+        self, method: str, url: str, safe_to_retry: bool = False, **kwargs: Any,
+    ) -> requests.Response:
+        """识别挑战后检查 HTTP 错误；仅明确安全的查询自动重试。
 
-        当响应是 Cloudflare Turnstile 人机验证页时，按"共享放行 Cookie >
-        打码平台解算"的顺序尝试放行会话并重放原请求；解算次数上限
-        （_cf_max_solves）保证不会无限重试。
+        写动作结果未知（含 GET 抽奖/领奖）不会因超时或 5xx 自动重放。
+        明确被验证页拒绝的请求可以在放行后重放，受解算预算限制。
         """
         kwargs.setdefault('timeout', DEFAULT_TIMEOUT)
-        try:
-            response = self.session.request(method, url, **kwargs)
-            response.raise_for_status()
-        except requests.RequestException as e:
-            if e.response is not None:
-                log_error(f"请求失败: {url}, 状态码: {e.response.status_code}", self.account_name)
-            else:
-                log_error(f"请求失败: {url}, 错误: {e}", self.account_name)
-            raise
+        retries = 0
+        replays = 0
+        while True:
+            if self._is_stopped():
+                raise CloudflareInterrupted("收到停止信号，中断请求")
+            try:
+                response = self.session.request(method, url, **kwargs)
+                if is_turnstile_challenge(response.text):
+                    if replays >= self._cf_max_solves + 1 or not self._resolve_cloudflare_challenge(response):
+                        raise CloudflareChallengeError("Cloudflare 验证未放行，请检查解算配置或更新 Cookie")
+                    replays += 1
+                    continue
+                if safe_to_retry and response.status_code in (500, 502, 503, 504) and retries < 3:
+                    self._sleep(2 ** retries)
+                    retries += 1
+                    continue
+                response.raise_for_status()
+                return response
+            except (requests.ConnectionError, requests.Timeout):
+                if not safe_to_retry or retries >= 3:
+                    log_error("请求连接失败或超时，操作结果无法确认", self.account_name)
+                    raise
+                self._sleep(2 ** retries)
+                retries += 1
+            except requests.RequestException as error:
+                status = error.response.status_code if error.response is not None else "未知"
+                log_error(f"请求失败，HTTP 状态: {status}", self.account_name)
+                raise
 
-        if is_turnstile_challenge(response.text):
-            if self._resolve_cloudflare_challenge(response):
-                # 放行成功，重放原请求；若仍命中验证页会再次尝试（有次数上限）
-                return self._send_request(method, url, **kwargs)
-        return response
+    def close(self) -> None:
+        """在账户处理结束后释放连接池。"""
+        self.session.close()
 
     def _resolve_cloudflare_challenge(self, response: requests.Response) -> bool:
         """处理 Cloudflare 人机验证页，按"共享放行 > 打码平台"顺序尝试放行。
@@ -278,11 +304,13 @@ class GamemaleAutomation(
             "（通常需要 10~60 秒）…",
             self.account_name,
         )
+        self._cf_solved_count += 1
         try:
             token = solve_turnstile(
                 solver, api_key, sitekey,
                 response.url or f"{BASE_URL}/forum.php",
                 should_stop=self._is_stopped,
+                sleep=self._sleep,
             )
         except CloudflareSolverError as e:
             log_error(f"Turnstile 解算失败: {e}", self.account_name)
@@ -303,7 +331,6 @@ class GamemaleAutomation(
             log_error(f"提交 Cloudflare 验证失败: {e}", self.account_name)
             return False
 
-        self._cf_solved_count += 1
         if passed:
             log_success("Cloudflare 验证通过，本会话已放行", self.account_name)
             self._share_pass_cookies()
@@ -315,9 +342,9 @@ class GamemaleAutomation(
     def extract_cookies_string(self) -> str:
         """从当前 session 提取 cookie 字符串"""
         return '; '.join(
-            f"{c.name}={c.value}"
-            for c in self.session.cookies
-            if c.domain and 'gamemale.com' in c.domain
+            f"{name}={value}" for name, value, _ in filter_gamemale_cookies(
+                (cookie.name, cookie.value, cookie.domain) for cookie in self.session.cookies
+            )
         )
 
     def _get_config_bool(self, keys: List[str], default: bool = False) -> bool:

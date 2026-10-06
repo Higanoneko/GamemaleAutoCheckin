@@ -17,7 +17,10 @@
       "solver": "",
       "api_key": "",
       "max_solves": 2
-    }
+    },
+    "captcha_max_retries": 3,
+    "captcha_precheck": true,
+    "asset_history_enabled": true
   },
   "cloudflare": {
     "solver": "",

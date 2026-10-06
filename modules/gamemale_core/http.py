@@ -3,7 +3,6 @@
 
 import requests
 from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
 
 from .constants import BASE_URL
 
@@ -21,13 +20,9 @@ def create_session() -> requests.Session:
     """
     session = requests.Session()
 
-    retry_strategy = Retry(
-        total=3,
-        backoff_factor=1,
-        status_forcelist=[500, 502, 503, 504],
-        allowed_methods=["GET", "POST", "HEAD"],
-    )
-    adapter = HTTPAdapter(max_retries=retry_strategy)
+    # Discuz 的 GET 也可能兑换/抽奖。重试由客户端按操作语义决定，
+    # 同时让 503 验证页能够先被识别，并让等待接入停止控制器。
+    adapter = HTTPAdapter(max_retries=0)
     session.mount("https://", adapter)
     session.mount("http://", adapter)
 

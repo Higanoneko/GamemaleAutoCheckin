@@ -88,16 +88,43 @@ class LoginParserTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             _extract_login_form_parameters("<html>no form</html>")
 
+    def test_login_form_can_explicitly_require_no_captcha(self):
+        from modules.gamemale_core.parsers import parse_login_form
+        form = parse_login_form('<form name="login" action="member.php?loginhash=abc">'
+                                '<input name="formhash" value="placeholder"></form>')
+        self.assertFalse(form.captcha_required)
+        self.assertIsNone(form.seccodehash)
+        self.assertEqual(form.formhash, 'placeholder')
+
+    def test_login_form_extracts_dynamic_captcha_modid(self):
+        from modules.gamemale_core.parsers import parse_login_form
+        form = parse_login_form(self.LOGIN_FORM_HTML.replace('member::logging', 'custom::logging'))
+        self.assertTrue(form.captcha_required)
+        self.assertEqual(form.modid, 'custom::logging')
+
     def test_extract_formhash_variants(self):
         self.assertEqual(_extract_formhash('<input name="formhash" value="ab12cd34" />'), "ab12cd34")
         self.assertEqual(_extract_formhash('url?formhash=ff00ff00'), "ff00ff00")
         self.assertIsNone(_extract_formhash("<html>none</html>"))
 
     def test_is_profile_page_logged_in(self):
-        logged_in = '<a>我的资料</a><div class="avatar">uid=12345</div>'
+        logged_in = '<script>var discuz_uid = 12345;</script><a>我的资料</a>'
         logged_out = "<title>登录</title><p>请先登录后访问个人资料</p>"
         self.assertTrue(_is_profile_page_logged_in(logged_in))
         self.assertFalse(_is_profile_page_logged_in(logged_out))
+
+    def test_public_uid_links_do_not_prove_login(self):
+        page = '<script>var discuz_uid = 0;</script><a href="home.php?uid=123">个人空间</a>'
+        self.assertFalse(_is_profile_page_logged_in(page))
+        self.assertFalse(_is_profile_page_logged_in('<a href="home.php?uid=123">我的资料</a>'))
+
+    def test_cookie_inputs_preserve_embedded_equals_and_ignore_prefix(self):
+        from modules.gamemale_core.parsers import parse_cookie_header
+        self.assertEqual(parse_cookie_header('Cookie: auth=a=b;\n saltkey=c'), {'auth': 'a=b', 'saltkey': 'c'})
+        self.assertEqual(parse_cookie_header('"auth=a=b; saltkey=c"'), {'auth': 'a=b', 'saltkey': 'c'})
+        self.assertEqual(parse_cookie_header('{"auth":"a=b","saltkey":"c"}'), {'auth': 'a=b', 'saltkey': 'c'})
+        with self.assertRaises(ValueError):
+            parse_cookie_header('auth=x; broken')
 
     def test_is_login_response_success(self):
         self.assertTrue(_is_login_response_success('<root><![CDATA[succeed]]></root>'))

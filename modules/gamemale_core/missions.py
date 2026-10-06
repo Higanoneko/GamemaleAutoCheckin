@@ -79,7 +79,7 @@ class MissionsMixin:
         return _task_exclusion_reason(task, exclude_ids, exclude_names, exclude_keywords)
     def get_new_tasks(self) -> List[Dict[str, str]]:
         """获取当前可接取的新任务列表。"""
-        response = self._send_request('GET', TASK_LIST_URL)
+        response = self._send_request('GET', TASK_LIST_URL, safe_to_retry=True)
         tasks = _parse_new_task_list(response.text)
         log_info(f"检测到 {len(tasks)} 个可接取任务", self.account_name)
         return tasks
@@ -201,7 +201,7 @@ class MissionsMixin:
 
     def get_doing_missions(self) -> List[Dict[str, str]]:
         """获取进行中的任务列表，并标记可领取奖励的任务。"""
-        response = self._send_request('GET', TASK_DOING_URL)
+        response = self._send_request('GET', TASK_DOING_URL, safe_to_retry=True)
         missions = _parse_doing_task_list(response.text)
         log_info(f"检测到 {len(missions)} 个进行中的任务", self.account_name)
         return missions

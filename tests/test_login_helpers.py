@@ -336,7 +336,7 @@ class LoginHelperTests(unittest.TestCase):
             only_online=False,
         )
 
-        apply_runtime_overrides(accounts, args)
+        accounts = apply_runtime_overrides(accounts, args)
 
         self.assertTrue(accounts[0]["online_runtime_enabled"])
         self.assertEqual(accounts[0]["online_time_seconds"], 1800)
@@ -357,7 +357,7 @@ class LoginHelperTests(unittest.TestCase):
             only_online=False,
         )
 
-        apply_runtime_overrides(accounts, args)
+        accounts = apply_runtime_overrides(accounts, args)
 
         self.assertFalse(accounts[0]["online_runtime_enabled"])
         self.assertEqual(accounts[0]["online_time_seconds"], 600)
@@ -377,7 +377,7 @@ class LoginHelperTests(unittest.TestCase):
             only_online=False,
         )
 
-        apply_runtime_overrides(accounts, args)
+        accounts = apply_runtime_overrides(accounts, args)
 
         self.assertFalse(accounts[0]["online_runtime_enabled"])
         self.assertNotIn("online_time_seconds", accounts[0])
@@ -392,7 +392,7 @@ class LoginHelperTests(unittest.TestCase):
             only_online=False,
         )
 
-        apply_runtime_overrides(accounts, args)
+        accounts = apply_runtime_overrides(accounts, args)
 
         self.assertTrue(accounts[0]["online_runtime_enabled"])
         client = GamemaleAutomation(accounts[0])
@@ -411,7 +411,7 @@ class LoginHelperTests(unittest.TestCase):
             only_online=True,
         )
 
-        apply_runtime_overrides(accounts, args)
+        accounts = apply_runtime_overrides(accounts, args)
 
         self.assertTrue(accounts[0]["only_online"])
         self.assertTrue(accounts[0]["online_runtime_enabled"])
@@ -436,7 +436,7 @@ class LoginHelperTests(unittest.TestCase):
         report = client.execute_all_tasks()
 
         self.assertEqual(calls, ["online"])
-        self.assertIn("挂机时长", report)
+        self.assertIn("挂机时长", report.report)
 
 
 if __name__ == "__main__":

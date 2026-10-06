@@ -1,7 +1,10 @@
 # -*- coding: utf-8 -*-
 """Report generation for account task runs."""
 
-from typing import Dict, List, Optional
+from typing import Dict, List, Mapping, Optional, Sequence, Union
+
+from .assets import asset_deltas
+from .results import TaskResult
 
 
 def format_duration(seconds: int) -> str:
@@ -15,12 +18,14 @@ def format_duration(seconds: int) -> str:
 
 def build_detailed_report(
     account_name: str,
-    task_results: Dict[str, bool],
+    task_results: Union[Dict[str, bool], Sequence[TaskResult]],
     user_credits: Optional[Dict[str, str]] = None,
     task_summary_data: Optional[List[Dict[str, str]]] = None,
     mission_summary: Optional[Dict[str, object]] = None,
     mission_results: Optional[List[Dict[str, str]]] = None,
     online_time_summary: Optional[Dict[str, object]] = None,
+    assets_before: Optional[Mapping[str, int]] = None,
+    assets_after: Optional[Mapping[str, int]] = None,
 ) -> str:
     """生成详细的统计报告文本（纯函数）。"""
     message = f"【{account_name}】 Gamemale 每日任务完成统计\n\n"
@@ -31,17 +36,25 @@ def build_detailed_report(
             message += f"  - {name}: {value}\n"
         message += "\n"
 
-    success_count = sum(1 for result in task_results.values() if result)
-    total_count = len(task_results)
+    outcomes = [TaskResult(name, 'success' if result else 'failed') for name, result in task_results.items()] if isinstance(task_results, dict) else list(task_results)
+    active = [result for result in outcomes if result.status != 'skipped']
+    success_count = sum(result.status in ('success', 'already_done') for result in active)
+    total_count = len(active)
     message += f"任务执行概况: {success_count}/{total_count} 成功\n\n"
 
     message += "任务详情:\n"
-    status_map = {True: "✅ 成功", False: "❌ 失败", None: "⏸️ 跳过"}
-    sorted_tasks = sorted(task_results.items(), key=lambda item: item[0] == "血液兑换")
-    for task_name, result in sorted_tasks:
-        status = status_map.get(result, "❓ 未知")
-        message += f"  - {task_name}: {status}\n"
+    status_map = {'success': '✅ 成功', 'already_done': '✅ 已完成', 'failed': '❌ 失败',
+                  'skipped': '⏸️ 跳过', 'stopped': '⏹️ 已中断', 'unknown': '❓ 未确认'}
+    for outcome in outcomes:
+        detail = f"（{outcome.message}）" if outcome.message else ''
+        message += f"  - {outcome.name}: {status_map[outcome.status]}{detail}\n"
     message += "\n"
+
+    if assets_before is not None and assets_after is not None:
+        deltas = asset_deltas(assets_before, assets_after)
+        message += '本次资产变化:\n'
+        message += ''.join(f'  - {name}: {value:+d}\n' for name, value in deltas.items()) if deltas else '  - 缺少两次有效采集，无法计算\n'
+        message += '\n'
 
     if mission_summary:
         message += "新任务接取:\n"
@@ -93,8 +106,8 @@ def build_detailed_report(
         message += f"  - 状态: {status_text}\n"
         if online_time_summary.get("enabled"):
             message += (
-                f"  - 计划时长: {format_duration(int(online_time_summary.get('duration_seconds', 0)))}，"
-                f"刷新间隔: {format_duration(int(online_time_summary.get('interval_seconds', 0)))}，"
+                f"  - 计划时长: {format_duration(int(str(online_time_summary.get('duration_seconds', 0))))}，"
+                f"刷新间隔: {format_duration(int(str(online_time_summary.get('interval_seconds', 0))))}，"
                 f"刷新次数: {online_time_summary.get('refresh_count', 0)}\n"
             )
             if online_time_summary.get("error"):
@@ -111,6 +124,7 @@ def build_detailed_report(
 
 
 class ReportMixin:
+    account_name: str
     def generate_detailed_report(
         self,
         task_results: Dict[str, bool],
@@ -127,3 +141,17 @@ class ReportMixin:
             mission_results=getattr(self, "mission_results", None),
             online_time_summary=getattr(self, "online_time_summary", None),
         )
+
+
+def build_asset_history_report(
+    previous: Mapping[str, int], current: Mapping[str, int], sampled_at: Mapping[str, str],
+) -> str:
+    """各字段使用其真实的上次采集时间，不标记为每日任务收益。"""
+    deltas = asset_deltas(previous, current)
+    lines = ['较上次有效采集的资产变化:']
+    for name, value in current.items():
+        if name in deltas:
+            lines.append(f'  - {name}: {deltas[name]:+d}（上次: {sampled_at.get(name, "未知时间")}）')
+        else:
+            lines.append(f'  - {name}: {value}（首次记录）')
+    return '\n'.join(lines) + '\n'

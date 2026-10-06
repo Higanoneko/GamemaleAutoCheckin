@@ -170,6 +170,7 @@ def solve_turnstile(
     timeout: int = DEFAULT_SOLVE_TIMEOUT,
     poll_interval: int = DEFAULT_POLL_INTERVAL,
     should_stop: Optional[Callable[[], bool]] = None,
+    sleep: Callable[[float], None] = time.sleep,
 ) -> str:
     """通过第三方平台解算 Turnstile，返回 token。
 
@@ -202,11 +203,11 @@ def solve_turnstile(
 
     if solver == "2captcha":
         task_id = _create_captcha2_task(api_key, sitekey, page_url)
-        token = _poll_captcha2_task(api_key, task_id, timeout, poll_interval, _check_stopped)
+        token = _poll_captcha2_task(api_key, task_id, timeout, poll_interval, _check_stopped, sleep)
     else:
         base = CAPSOLVER_BASE if solver == "capsolver" else YESCAPTCHA_BASE
         task_id = _create_task(base, api_key, sitekey, page_url)
-        token = _poll_task(base, api_key, task_id, timeout, poll_interval, _check_stopped)
+        token = _poll_task(base, api_key, task_id, timeout, poll_interval, _check_stopped, sleep)
 
     if not token:
         raise CloudflareSolverError(f"解算服务({solver})未返回有效 token")
@@ -246,6 +247,7 @@ def _poll_captcha2_task(
     timeout: int,
     poll_interval: int,
     check_stopped: Callable[[], None],
+    sleep: Callable[[float], None] = time.sleep,
 ) -> str:
     deadline = time.time() + timeout
     while True:
@@ -275,7 +277,7 @@ def _poll_captcha2_task(
 
         if time.time() >= deadline:
             raise CloudflareSolverError(f"2captcha 解算超时（{timeout} 秒）")
-        time.sleep(poll_interval)
+        sleep(poll_interval)
 
 
 # ---------- capsolver / yescaptcha（同构 API） ----------
@@ -318,6 +320,7 @@ def _poll_task(
     timeout: int,
     poll_interval: int,
     check_stopped: Callable[[], None],
+    sleep: Callable[[float], None] = time.sleep,
 ) -> str:
     deadline = time.time() + timeout
     while True:
@@ -351,7 +354,7 @@ def _poll_task(
 
         if time.time() >= deadline:
             raise CloudflareSolverError(f"解算服务 {base} 超时（{timeout} 秒）")
-        time.sleep(poll_interval)
+        sleep(poll_interval)
 
 
 def _error_from_http(base: str, response: requests.Response) -> str:

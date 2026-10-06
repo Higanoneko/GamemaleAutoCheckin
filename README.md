@@ -4,10 +4,10 @@
 
 ## ✨ 功能特性 (v2.3)
 
-- 🚀 **性能卓越**: 通过直接 API 调用代替页面抓取，执行速度提升 **70%+**。
+- 🔎 **可诊断运行**: 支持离线配置检查、在线自检与只查询资产；任务结果决定退出码。
 - 🧠 **本地验证码识别**: 集成 `ddddocr`，实现本地、免费、高效的登录验证码识别。
 - 🍪 **智能登录**: 优先使用 Cookie 登录，失败时自动回退到密码登录（最多8次尝试）。
-- 🏗️ **现代化架构**: 采用面向对象设计，代码结构清晰，易于维护和扩展。
+- 🏗️ **函数式逻辑**: 页面解析、结果汇总和资产差额使用纯函数，HTTP、等待和文件写入集中在边界。
 - 🔄 **核心任务自动化**:
   - 每日自动签到
   - 每日自动抽奖
@@ -101,8 +101,8 @@
 
 ## 环境要求
 
-- Python 3.8+
-- `pip install -r requirements.txt`
+- Python 3.10+（锁定的 requests 版本需要 Python 3.10 及以上）
+- Cookie 登录：`pip install -r requirements.txt`；需要验证码的密码登录：`pip install -r requirements-ocr.txt`
 
 ## 🚀 快速开始
 
@@ -242,6 +242,48 @@
 -   `online_refresh_interval_seconds`: **(整数, 可选, 默认为 900)**
     -   **说明**: 刷新间隔，单位秒。默认 900 秒，等同示例用户脚本的默认刷新间隔。
 
+### 运行模式与配置来源
+
+两个入口均支持以下参数（示例可替换为 `gamemale_daily_ql.py`）：
+
+```bash
+python gamemale_daily.py --check-config
+python gamemale_daily.py --check
+python gamemale_daily.py --status-only
+```
+
+| 模式 | 行为 |
+| --- | --- |
+| 默认 | 查询初始资产 → 签到/抽奖 → 接任务 → 可选挂机 → 日志/空间/打招呼 → 领奖 → 查询/可选兑换 |
+| `--check-config` | 仅离线验证配置并显示来源、Cookie 项数和短指纹；不请求论坛、不输出凭据 |
+| `--check` | 验证登录、formhash 与资产解析；不签到、兑换、互动，不回写 Cookie/资产文件，不发送通知 |
+| `--status-only` | 登录并查询资产、生成报告；允许更新 Cookie 与资产历史，不执行日常动作 |
+| `--only-online` | 仅执行已有挂机刷新流程 |
+
+`--check` 仍可能执行密码登录或 Cloudflare 解算，因此属于在线自检，可能消耗解算额度。需要完全离线时使用 `--check-config`。自检/查询模式不能与 `--enable-online` 同时使用。
+
+两入口使用同一来源优先级：`config.yaml`（青龙为 `GameMale_Config.yaml`）> `APP_CONFIG_JSON` > `GAMEMALE_ACCOUNTS` > `GAMEMALE_COOKIE` > `config.json`。JSON 同时兼容 `accounts` 多账户和旧 `gamemale` 单账户结构，顶层 Cloudflare 配置随账户一起加载。`GAMEMALE_COOKIE` 每行代表一个账户；单账户多行 Cookie 请放在 JSON 的 `cookie` 字段中。
+
+Cookie 输入支持 `Cookie:` 前缀、引号、换行和 JSON 对象。只在确认游客状态时回退密码登录；网络异常或缺少身份标记时明确报告未确认，避免误判过期。文件来源 Cookie 仅回写原加载文件，环境变量/Secrets 不写入其它配置文件。
+
+新增账户参数：
+
+| 参数 | 默认 | 说明 |
+| --- | --- | --- |
+| `captcha_max_retries` | `3` | 每次登录表单的图片识别预算，限定 1–8 次；只有需要验证码时加载 OCR |
+| `captcha_precheck` | `true` | 登录提交前由服务端验证识别结果；页面不兼容时可关闭 |
+| `asset_history_enabled` | `true` | 仅在取得经登录验证的正 UID 后，按账户保存有效资产快照 |
+
+### 结果与资产报告
+
+任务分别展示成功、已完成、跳过、失败、中断和未确认。启用的必需任务失败时账户计为失败，退出码非零；主动禁用或无须兑换属于跳过。日志扫描不足新增目标且没有明确请求失败时展示“未确认”，不单独导致账户失败；如果互动请求失败则计为失败。“已表过态”单独统计，不冒充今日新增或今日额度已完成。失败账户也进入结果汇总，通知仍通过已有回调（青龙使用内置通知）。
+
+资产报告区分“本次运行前后变化”和“较上次有效采集变化”，均不等同于今日任务收益。无法解析的余额保持缺失，千位分隔符可以正常转换；缺失字段不覆盖历史有效值。历史存于脚本目录 `.gamemale-state/assets.json`，按已验证 UID 隔离，每项保留采集时间，采用原子替换写入并已加入 Git 忽略规则。状态文件包含 UID 和余额，不含 Cookie 或密码。
+
+青龙/本地保留脚本目录即可跨运行比较。GitHub Actions 临时 Runner 默认不持久化该目录，因此只保证本次差额；未添加资产文件提交、缓存或上传流程。只读自检不写历史，也不更新比较基准。
+
+查询可安全重试并可中断；抽奖、领奖、兑换等动作在超时/5xx 导致结果不明时不会自动重复提交。明确返回验证页时允许放行后重放；403/503 验证页在普通 HTTP 错误之前处理，未放行会明确失败。
+
 ### 挂机参数
 
 不传 `--enable-online` 或 `--only-online` 时，挂机任务默认不运行，并且会忽略配置文件里的挂机相关字段。以下参数会覆盖配置文件，仅影响本次运行：
@@ -333,3 +375,13 @@ python gamemale_daily.py --only-online --online-time-minutes 30
 ## 许可证
 
 本项目基于 MIT 许可证。
+
+## 离线开发验证
+
+```bash
+pip install -r requirements-dev.txt
+python -m mypy
+python -m unittest discover -s tests
+```
+
+静态类型检查覆盖解析、配置、结果、报告与资产逻辑边界；既有会话 mixin 尚未全部纳入。PR 检查不加载论坛凭据，离线测试使用内联 HTML 和假会话。直接依赖版本已锁定；OCR 作为独立可选依赖。

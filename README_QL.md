@@ -23,12 +23,12 @@
 在青龙面板 → **依赖管理** → **Python3** 中添加：
 
 ```
-requests
-beautifulsoup4
-ddddocr
+requests==2.34.2
+beautifulsoup4==4.15.0
+PyYAML==6.0.3
 ```
 
-> `ddddocr` 仅在需要密码登录时必需，如果只使用 Cookie 登录可不安装。
+> Python 3.10+。需要验证码的密码登录另装 `ddddocr==1.6.1`，或使用仓库的 `requirements-ocr.txt`；Cookie 登录和无验证码登录不要求 OCR。
 
 ### 3. 首次运行
 
@@ -134,6 +134,9 @@ task gamemale_daily_ql.py --only-online --online-time-minutes 30
 | `task_exclude_ids` | 否 | 按任务 ID 排除，例如 `["25"]` |
 | `task_exclude_names` | 否 | 按完整任务名排除，例如 `["每周发帖任务"]` |
 | `task_exclude_keywords` | 否 | 按任务名或描述关键词排除，例如 `["发帖"]` |
+| `captcha_max_retries` | 否 | 每次表单验证码识别预算，默认 `3`，限定 1–8 次 |
+| `captcha_precheck` | 否 | 登录提交前由服务器验证验证码，默认 `true` |
+| `asset_history_enabled` | 否 | 按经登录验证的 UID 保存有效资产历史，默认 `true` |
 | `cloudflare`（顶层对象） | 否 | Cloudflare 人机验证自动解算配置，与 `accounts` **同级**（全局，对所有账户生效）：`solver`（`2captcha` / `capsolver` / `yescaptcha`，留空不启用）、`api_key`、`max_solves`（单次最多解算次数，默认 `2`）。也可用环境变量 `GAMEMALE_CF_SOLVER` / `GAMEMALE_CF_API_KEY` |
 | `账户内 cloudflare`（对象，可选） | 否 | 账户**局部**覆盖：把顶层 `cloudflare` 块复制进某个账户、改缩进即可，**局部非空字段优先于全局**，未填字段回落全局。取值优先级：账户局部 > 顶层全局 > 环境变量 |
 
@@ -165,6 +168,24 @@ task gamemale_daily_ql.py --only-online --online-time-minutes 30
 `--enable-online` 表示在正常任务流程中启用挂机；`--only-online` 表示只执行挂机。二者都不会自动设置挂机时长，通常需要与 `--online-time-minutes` 或 `--online-time-seconds` 一起使用。
 
 ---
+
+## 自检、查询与运行结果
+
+```bash
+python gamemale_daily_ql.py --check-config
+python gamemale_daily_ql.py --check
+python gamemale_daily_ql.py --status-only
+```
+
+`--check-config` 完全离线，只输出配置来源、Cookie 项数/短指纹和字段是否配置。`--check` 在线检查登录、formhash 与资产，可能密码登录/消耗 CF 解算额度，但不执行日常动作、不通知、不回写 Cookie 或资产历史。`--status-only` 只查询并生成报告，允许保存 Cookie 与历史，不兑换或互动。
+
+来源优先级统一为配置 YAML > `APP_CONFIG_JSON` > `GAMEMALE_ACCOUNTS` > `GAMEMALE_COOKIE` > `config.json`；`APP_CONFIG_JSON` 支持 `accounts` 和旧 `gamemale`，其顶层 CF 设置同时生效。Cookie 支持前缀、引号、换行和 JSON 对象；网络错误不会被直接判为过期。来自环境变量的 Cookie 不回写本地模板。
+
+任务结果区分成功、已完成、跳过、失败、中断和未确认；必需任务失败/停止返回非零退出码。领奖在互动和挂机之后检查。日志按篇数统计，同作者多篇分别计数，“已表过态”不当作今日额度。扫描不足但无明确请求失败时为未确认，不单独导致账户失败；报告会保留缺口。
+
+资产展示本次前后差额和较上次有效采集差额，历史按经验证 UID 存于脚本目录 `.gamemale-state/assets.json`。保留该目录即可跨运行比较；每项附上次采集时间，缺失值不覆盖旧值，损坏记录按首次采集处理。状态文件含 UID 和余额，不含登录凭据，已忽略，不应提交。
+
+通知继续由青龙自带 `notify.send` / `sendNotify.send` 负责，未新增送达检查或渠道实现；失败账户也可收到结果摘要，并遵循账户 `notify_enabled` 设置。
 
 ## 获取 Cookie
 

@@ -2,6 +2,7 @@
 """Small configuration coercion helpers."""
 
 import re
+from copy import deepcopy
 from typing import Any, Dict, List, Optional
 
 
@@ -53,3 +54,26 @@ def _merge_cloudflare_configs(
             if value is not None and str(value).strip() != "":
                 merged[key] = value
     return merged
+
+
+def normalize_config(raw: Any) -> Dict[str, Any]:
+    """验证配置结构并迁移旧单账户结构，返回独立副本。"""
+    if not isinstance(raw, dict):
+        raise ValueError("配置根节点必须是对象，不能是空文件或列表")
+    config = deepcopy(raw)
+    if 'accounts' not in config and 'gamemale' in config:
+        config['accounts'] = [config['gamemale']]
+    accounts = config.get('accounts', [])
+    if not isinstance(accounts, list) or any(not isinstance(a, dict) for a in accounts):
+        raise ValueError("accounts 必须是账户对象列表")
+    for index, account in enumerate(accounts):
+        for key in ('cookie', 'username', 'password'):
+            if key in account and not isinstance(account[key], str):
+                raise ValueError(f"账户 {index + 1} 的 {key} 必须是字符串")
+        if 'cloudflare' in account and not isinstance(account['cloudflare'], dict):
+            raise ValueError(f"账户 {index + 1} 的 cloudflare 必须是对象")
+    for key in ('cloudflare', 'notification'):
+        if key in config and not isinstance(config[key], dict):
+            raise ValueError(f"{key} 必须是对象")
+    config['accounts'] = accounts
+    return config

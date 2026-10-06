@@ -3,6 +3,9 @@
 
 import random
 import time
+from dataclasses import replace
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
 from .client import GamemaleAutomation
@@ -10,6 +13,9 @@ from .cloudflare import CloudflarePassPool
 from .config_utils import _coerce_config_bool
 from .logging_utils import log_error, log_info, log_section, log_success, log_warning
 from .stop_controller import StopController
+from .results import AccountRunResult, TaskResult
+from .assets import load_asset_records, merge_asset_record, previous_snapshot, save_asset_records
+from .reports import build_asset_history_report
 
 
 def run_all_accounts(
@@ -19,6 +25,8 @@ def run_all_accounts(
     send_notification: Optional[Callable[[str, str], None]] = None,
     cloudflare_config: Optional[Dict[str, Any]] = None,
     script_title: str = "Gamemale 每日任务自动化脚本",
+    client_factory: Optional[Callable[..., GamemaleAutomation]] = None,
+    asset_state_path: Optional[Path] = None,
 ) -> int:
     """
     多账户统一运行器。
@@ -59,44 +67,64 @@ def run_all_accounts(
         if not notify_enabled:
             log_info("通知: 已禁用", account_name)
 
+        client: Optional[GamemaleAutomation] = None
+        result: AccountRunResult
         try:
             if not account_config.get("cookie") and not (
                 account_config.get("username") and account_config.get("password")
             ):
-                log_error("账户配置无效: 必须提供 cookie 或 (username + password)", account_name)
-                failed_accounts += 1
-                continue
-
-            client = GamemaleAutomation(
-                account_config, i,
-                controller=controller,
-                save_cookie_callback=save_cookie_callback,
-                cf_share=cf_pass_pool,
-                cloudflare_config=cloudflare_config,
+                raise ValueError("账户配置无效: 必须提供 cookie 或 (username + password)")
+            factory = client_factory or GamemaleAutomation
+            client = factory(
+                account_config, i, controller=controller,
+                save_cookie_callback=None if account_config.get('run_mode') == 'check' else save_cookie_callback,
+                cf_share=cf_pass_pool, cloudflare_config=cloudflare_config,
             )
-
             if not client.login():
-                log_error("登录失败，跳过此账户", account_name)
-                failed_accounts += 1
-                continue
-
-            report = client.execute_all_tasks()
-
-            if report:
-                if notify_enabled:
-                    all_reports.append(report)
-                else:
-                    notify_skipped_accounts += 1
-                    log_info("任务完成，但通知已禁用，不发送结果", account_name)
-                success_accounts += 1
-                log_success("所有任务执行完成", account_name)
+                result = AccountRunResult(account_name, (TaskResult("登录", "failed"),),
+                                          f"【{account_name}】登录失败，请检查登录态、网络或验证配置\n")
             else:
-                failed_accounts += 1
-                log_error("任务执行失败", account_name)
+                result = client.execute_all_tasks()
+                if (asset_state_path is not None and isinstance(client.uid, int) and client.uid > 0
+                        and not result.stopped and result.assets_after
+                        and account_config.get('run_mode') != 'check'
+                        and client._get_config_bool(['asset_history_enabled'], default=True)):
+                    try:
+                        records = load_asset_records(asset_state_path)
+                        previous = previous_snapshot(records, client.uid)
+                        old_record = records.get(str(client.uid), {})
+                        times = old_record.get('sampled_at', {}) if isinstance(old_record, dict) else {}
+                        report = build_asset_history_report(previous, dict(result.assets_after), times if isinstance(times, dict) else {})
+                        result = replace(result, report=result.report + report)
+                        sampled_at = datetime.now(timezone(timedelta(hours=8))).isoformat(timespec='seconds')
+                        updated = merge_asset_record(records, client.uid, dict(result.assets_after), sampled_at)
+                        save_asset_records(asset_state_path, updated)
+                    except (OSError, ValueError, TypeError):
+                        log_warning('资产历史无法保存，本次任务结果和差额仍然有效', account_name)
+        except Exception as error:
+            # 不把异常文本（可能含提交数据/凭据）原样送入通知。
+            reason = str(error) if isinstance(error, ValueError) else type(error).__name__
+            log_error(f"账户执行失败: {reason}", account_name)
+            result = AccountRunResult(account_name, (TaskResult("账户执行", "failed"),),
+                                      f"【{account_name}】账户执行失败: {reason}\n")
+        finally:
+            if client is not None:
+                try:
+                    client.close()
+                except Exception:
+                    log_warning('关闭账户连接池失败', account_name)
 
-        except Exception as e:
-            log_error(f"处理账户时发生异常: {e}", account_name)
+        if result.succeeded:
+            success_accounts += 1
+            log_success("任务执行成功", account_name)
+        else:
             failed_accounts += 1
+            log_error("任务存在失败或已中断，请查看报告", account_name)
+        log_info(result.report, account_name)
+        if notify_enabled:
+            all_reports.append(result.report)
+        else:
+            notify_skipped_accounts += 1
 
         # 多账户间延迟（可中断）
         if i < len(accounts) - 1:
@@ -129,4 +157,5 @@ def run_all_accounts(
 
         send_notification(summary_title, summary_content)
 
-    return failed_accounts
+    # 停止时未运行账户也不能计为成功；返回非零以区分完整执行。
+    return len(accounts) - success_accounts
