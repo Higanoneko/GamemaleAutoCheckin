@@ -3,7 +3,25 @@
 
 import re
 from copy import deepcopy
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Mapping, Optional, Tuple
+
+from .cloudflare import normalize_solver
+
+
+def resolve_cloudflare_solver_config(
+    config: Mapping[str, Any], environ: Mapping[str, str],
+) -> Tuple[str, str]:
+    """对已合并配置与环境兜底作同一套纯函数归一化。"""
+    solver = str(config.get('solver') or config.get('provider') or '').strip()
+    key = str(config.get('api_key') or config.get('key') or '').strip()
+    solver = solver or str(environ.get('GAMEMALE_CF_SOLVER') or environ.get('CF_SOLVER') or '').strip()
+    key = key or str(environ.get('GAMEMALE_CF_API_KEY') or environ.get('CF_API_KEY') or '').strip()
+    if solver:
+        try:
+            solver = normalize_solver(solver)
+        except ValueError:
+            raise ValueError('不支持的 Cloudflare 解算服务，请检查 solver 配置') from None
+    return solver, key
 
 
 def _coerce_config_list(value: Any) -> List[str]:

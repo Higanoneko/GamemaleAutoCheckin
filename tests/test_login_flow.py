@@ -62,6 +62,7 @@ class LoginFlowTests(unittest.TestCase):
         self.assertEqual(calls[1].kwargs['params']['modid'], 'custom::logging')
         self.assertEqual(calls[3].kwargs['params']['secverify'], 'AB12')
         self.assertEqual(calls[4].args[0], 'POST')
+        self.assertEqual(calls[4].kwargs['data']['seccodemodid'], 'custom::logging')
 
     def test_non_image_captcha_does_not_reach_ocr_or_password_submission(self):
         client = GamemaleAutomation({'username': 'offline', 'password': 'placeholder', 'captcha_max_retries': 1})

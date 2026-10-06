@@ -68,6 +68,9 @@ class CreditsMixin:
                 )
                 headers = {'X-Requested-With': 'XMLHttpRequest', 'Referer': credit_page_url}
 
+                # 提交可能改变余额，超时也不能证明兑换没有发生。
+                # 只让提交后的重新查询成为有效的末尾资产采集。
+                credits_data = {}
                 post_response = self._send_request('POST', exchange_url, data=payload, headers=headers)
 
                 if _is_credit_exchange_success(post_response.text):

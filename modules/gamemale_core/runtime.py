@@ -6,7 +6,7 @@ from copy import deepcopy
 from typing import Any, Dict, List, Mapping, Tuple
 
 from .parsers import parse_cookie_header
-from .config_utils import _merge_cloudflare_configs
+from .config_utils import _merge_cloudflare_configs, resolve_cloudflare_solver_config
 
 
 def add_runtime_arguments(parser: argparse.ArgumentParser) -> None:
@@ -68,7 +68,10 @@ def configuration_diagnostics(
             lines.append(f'账户 {index + 1}: Cookie 格式错误')
             valid = False
         cf = _merge_cloudflare_configs(account, config.get('cloudflare'))
-        solver = cf.get('solver') or cf.get('provider') or environ.get('GAMEMALE_CF_SOLVER') or environ.get('CF_SOLVER')
-        key = cf.get('api_key') or cf.get('key') or environ.get('GAMEMALE_CF_API_KEY') or environ.get('CF_API_KEY')
-        lines.append(f'账户 {index + 1}: Cloudflare 解算兜底 {"已配置" if solver and key else "未配置（遇挑战时会明确报错）"}')
+        try:
+            solver, key = resolve_cloudflare_solver_config(cf, environ)
+            lines.append(f'账户 {index + 1}: Cloudflare 解算兜底 {"已配置" if solver and key else "未配置（遇挑战时会明确报错）"}')
+        except ValueError:
+            lines.append(f'账户 {index + 1}: Cloudflare 解算兜底无效，请检查 solver 配置')
+            valid = False
     return valid, tuple(lines)

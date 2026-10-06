@@ -16,7 +16,6 @@ from .cloudflare import (
     extract_turnstile_sitekey,
     filter_gamemale_cookies,
     is_turnstile_challenge,
-    normalize_solver,
     select_pass_cookies,
     solve_turnstile,
     submit_turnstile_token,
@@ -25,6 +24,7 @@ from .config_utils import (
     _coerce_config_bool,
     _coerce_config_list,
     _merge_cloudflare_configs,
+    resolve_cloudflare_solver_config,
 )
 from .constants import BASE_URL, DDDDOCR_AVAILABLE, DEFAULT_TIMEOUT, ddddocr
 from .credits import CreditsMixin
@@ -108,29 +108,11 @@ class GamemaleAutomation(
           - 环境变量 GAMEMALE_CF_SOLVER / GAMEMALE_CF_API_KEY
             （兼容 CF_SOLVER / CF_API_KEY）作为最终兜底。
         """
-        solver = str(
-            self._cloudflare_config.get("solver")
-            or self._cloudflare_config.get("provider")
-            or ""
-        ).strip()
-        api_key = str(
-            self._cloudflare_config.get("api_key")
-            or self._cloudflare_config.get("key")
-            or ""
-        ).strip()
-
-        solver = solver or os.environ.get("GAMEMALE_CF_SOLVER") or os.environ.get("CF_SOLVER")
-        api_key = api_key or os.environ.get("GAMEMALE_CF_API_KEY") or os.environ.get("CF_API_KEY")
-
-        solver = str(solver or "").strip()
-        api_key = str(api_key or "").strip()
-        if solver:
-            try:
-                solver = normalize_solver(solver)
-            except ValueError as e:
-                log_warning(str(e), self.account_name)
-                solver = ""
-        return solver, api_key
+        try:
+            return resolve_cloudflare_solver_config(self._cloudflare_config, os.environ)
+        except ValueError as error:
+            log_warning(str(error), self.account_name)
+            return '', ''
 
     def _is_stopped(self) -> bool:
         """检查是否已请求停止"""

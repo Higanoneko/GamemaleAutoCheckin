@@ -13,6 +13,28 @@ from modules.gamemale_core.configuration import load_runtime_config, create_cook
 
 
 class ConfigurationTests(unittest.TestCase):
+    def test_cloudflare_diagnostics_match_client_normalization(self):
+        from modules.gamemale_core.client import GamemaleAutomation
+        from modules.gamemale_core.runtime import configuration_diagnostics
+        cases = (
+            ({'solver': ' Capsolver ', 'api_key': ' key '}, {}, True),
+            ({'solver': 'yes-captcha', 'api_key': 'key'}, {}, True),
+            ({'solver': 'unknown', 'api_key': 'key'}, {}, False),
+            ({'solver': 'capsolver', 'api_key': '   '}, {}, False),
+            ({'solver': '   ', 'api_key': '   '}, {'CF_SOLVER': 'capsolver', 'CF_API_KEY': 'key'}, True),
+        )
+        for cf, environment, expected in cases:
+            with self.subTest(cf=cf), patch.dict('os.environ', environment, clear=True):
+                account = {'cookie': 'auth=placeholder', 'cloudflare': cf}
+                client = GamemaleAutomation(account)
+                try:
+                    solver, key = client._get_cloudflare_solver_config()
+                    _, lines = configuration_diagnostics({'accounts': [account]}, environment)
+                    self.assertEqual(bool(solver and key), expected)
+                    self.assertEqual('兜底 已配置' in lines[-1], expected)
+                finally:
+                    client.close()
+
     def test_json_accounts_and_global_cloudflare_travel_together(self):
         with tempfile.TemporaryDirectory() as folder:
             config = load_runtime_config(Path(folder) / 'absent.yaml', environ={

@@ -8,6 +8,12 @@ from modules.gamemale_core.runner import run_all_accounts
 
 
 class RunnerTests(unittest.TestCase):
+    def test_task_result_boolean_reflects_status_for_existing_callers(self):
+        for status in ('failed', 'unknown', 'stopped'):
+            self.assertFalse(bool(TaskResult('签到', status)))
+        for status in ('success', 'already_done', 'skipped'):
+            self.assertTrue(bool(TaskResult('签到', status)))
+
     def test_failed_task_report_is_not_counted_as_success(self):
         client = Mock()
         client.login.return_value = True

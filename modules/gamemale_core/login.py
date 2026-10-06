@@ -2,7 +2,8 @@
 """Login and formhash handling for the shared automation client."""
 
 import random
-from typing import Optional, Tuple
+from dataclasses import dataclass
+from typing import Optional
 
 import requests
 
@@ -34,6 +35,15 @@ class LoginVerificationError(ValueError):
 
 class CaptchaRecognitionError(ValueError):
     """独立验证码预算耗尽，不再通过重新登录刷新同一预算。"""
+
+
+@dataclass(frozen=True)
+class LoginParameters:
+    loginhash: str
+    formhash: Optional[str] = None
+    seccodehash: Optional[str] = None
+    seccode_verify: Optional[str] = None
+    modid: Optional[str] = None
 
 
 class LoginMixin:
@@ -122,7 +132,9 @@ class LoginMixin:
             log_info(f"尝试密码登录 ({attempt + 1}/{MAX_LOGIN_RETRIES})...", self.account_name)
 
             try:
-                loginhash, formhash, seccodehash, seccode_verify = self._get_login_parameters()
+                parameters = self._get_login_parameters()
+                loginhash, formhash = parameters.loginhash, parameters.formhash
+                seccodehash, seccode_verify = parameters.seccodehash, parameters.seccode_verify
 
                 if loginhash == "ALREADY_LOGGED_IN":
                     return self._verify_logged_in_session()
@@ -145,7 +157,8 @@ class LoginMixin:
                 }
 
                 if seccodehash:
-                    payload.update({'seccodehash': seccodehash, 'seccodeverify': seccode_verify})
+                    payload.update({'seccodehash': seccodehash, 'seccodeverify': seccode_verify,
+                                    'seccodemodid': parameters.modid})
 
                 login_response = self._send_request(
                     'POST', login_url, data=payload,
@@ -171,7 +184,7 @@ class LoginMixin:
                     self._sleep(random.uniform(2, 5))
 
         return False
-    def _get_login_parameters(self) -> Tuple[str, Optional[str], Optional[str], Optional[str]]:
+    def _get_login_parameters(self) -> LoginParameters:
         """获取登录所需的动态参数和验证码"""
         ajax_headers = {'X-Requested-With': 'XMLHttpRequest'}
         login_popup_url = (
@@ -184,11 +197,11 @@ class LoginMixin:
 
         if _is_login_form_session_alive(html_content):
             log_info("检测到已登录状态，无需重新登录", self.account_name)
-            return "ALREADY_LOGGED_IN", None, None, None
+            return LoginParameters('ALREADY_LOGGED_IN')
 
         form = parse_login_form(html_content)
         if not form.captcha_required:
-            return form.loginhash, form.formhash, None, None
+            return LoginParameters(form.loginhash, form.formhash)
         if not self._init_ocr():
             raise ValueError('验证码登录需要安装 OCR 依赖')
         attempts = min(8, max(1, self._get_config_int(['captcha_max_retries'], default=3)))
@@ -204,12 +217,12 @@ class LoginMixin:
             code = self._recognize_captcha(img_response.content) if content_type.startswith('image/') and img_response.content else None
             if code:
                 if not self._get_config_bool(['captcha_precheck'], default=True):
-                    return form.loginhash, form.formhash, form.seccodehash, code
+                    return LoginParameters(form.loginhash, form.formhash, form.seccodehash, code, form.modid)
                 check_response = self._send_request('GET', f'{BASE_URL}/misc.php', params={
                     'mod': 'seccode', 'action': 'check', 'idhash': form.seccodehash,
                     'modid': form.modid, 'secverify': code, 'inajax': '1'}, headers=ajax_headers, safe_to_retry=True)
                 if is_captcha_check_success(check_response.text):
-                    return form.loginhash, form.formhash, form.seccodehash, code
+                    return LoginParameters(form.loginhash, form.formhash, form.seccodehash, code, form.modid)
             if attempt + 1 < attempts:
                 self._sleep(0.5)
         raise CaptchaRecognitionError('验证码识别或服务端预校验未通过')

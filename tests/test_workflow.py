@@ -5,6 +5,49 @@ from modules.gamemale_core.client import GamemaleAutomation
 
 
 class WorkflowTests(unittest.TestCase):
+    def test_uncertain_exchange_submission_discards_pre_exchange_balance(self):
+        import requests
+        client = self.make_client({'password': 'placeholder', 'auto_exchange': True})
+        client._get_credits = Mock(return_value=({'血液': '40 滴'}, 'https://www.gamemale.com/'))
+        client._send_request = Mock(side_effect=requests.Timeout('offline submission uncertainty'))
+        credits, exchanged = client.get_user_credits_and_exchange()
+        self.assertEqual(credits, {})
+        self.assertFalse(exchanged)
+        client._send_request.assert_called_once()
+
+    def test_failed_post_exchange_refresh_never_overwrites_asset_history(self):
+        import tempfile
+        from pathlib import Path
+        from modules.gamemale_core.assets import merge_asset_record, save_asset_records
+        from modules.gamemale_core.runner import run_all_accounts
+        from modules.gamemale_core.social import BlogInteractionResult
+        client = self.make_client({'password': 'placeholder', 'auto_exchange': True})
+        client.uid = 123
+        client.login = Mock(return_value=True)
+        client._get_credits = Mock(side_effect=[
+            ({'血液': '40 滴', '旅程': '5'}, 'https://www.gamemale.com/'),
+            ({'血液': '40 滴', '旅程': '5'}, 'https://www.gamemale.com/'),
+            RuntimeError('offline refresh failure'),
+        ])
+        client._send_request = Mock(return_value=Mock(text='积分操作成功'))
+        with patch('modules.gamemale_core.daily_tasks.interact_with_blogs',
+                   return_value=BlogInteractionResult(target=10, new_count=10)):
+            result = client.execute_all_tasks()
+        self.assertFalse(result.succeeded)
+        self.assertEqual(result.assets_after, ())
+        outcomes = {task.name: task.status for task in result.tasks}
+        self.assertEqual(outcomes['血液兑换'], 'success')
+        self.assertEqual(outcomes['资产查询'], 'failed')
+        client.execute_all_tasks = Mock(return_value=result)
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'assets.json'
+            save_asset_records(path, merge_asset_record({}, 123, {'血液': 40, '旅程': 5}, 'earlier'))
+            original = path.read_bytes()
+            failed = run_all_accounts([client.config], client_factory=lambda *a, **k: client,
+                                      asset_state_path=path)
+            self.assertEqual(failed, 1)
+            self.assertEqual(path.read_bytes(), original)
+
     def make_client(self, config=None):
         client = GamemaleAutomation(dict({'username': 'offline', 'auto_exchange': False}, **(config or {})))
         client.is_logged_in = True

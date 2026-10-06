@@ -17,6 +17,10 @@ class TaskResult:
     def succeeded(self) -> bool:
         return self.status in ('success', 'already_done', 'skipped')
 
+    def __bool__(self) -> bool:
+        """保留旧调用方以 if 判断单项任务成败的语义。"""
+        return self.succeeded
+
 
 @dataclass(frozen=True)
 class AccountRunResult:
