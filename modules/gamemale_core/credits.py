@@ -1,8 +1,11 @@
 # -*- coding: utf-8 -*-
 """Credit lookup, exchange, and reward log parsing."""
 
-from typing import Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
 
+import requests
+
+from .cloudflare import CloudflareChallengeError
 from .constants import BASE_URL, BLOOD_EXCHANGE_THRESHOLD
 from .logging_utils import log_error, log_info, log_success, log_warning
 from .parsers import (
@@ -11,7 +14,34 @@ from .parsers import (
     _parse_credit_list,
     _parse_credit_value_int,
     _parse_task_usage_table,
+    parse_usergroup_progress,
 )
+from .progression import UsergroupProgress
+
+if TYPE_CHECKING:
+    from .client import GamemaleAutomation
+
+
+def fetch_usergroup_progress(client: 'GamemaleAutomation') -> Optional[UsergroupProgress]:
+    """会话 IO 边界；读取失败保留参考估算，不修改用户组或客户端状态。"""
+    if client._is_stopped():
+        return None
+    try:
+        response = client._send_request('GET', f'{BASE_URL}/home.php?mod=spacecp&ac=usergroup',
+                                        safe_to_retry=True)
+    except CloudflareChallengeError as error:
+        if not client._is_stopped():
+            log_error(f'用户组页面 Cloudflare 验证未放行: {type(error).__name__}，使用参考估算', client.account_name)
+        return None
+    except requests.RequestException as error:
+        log_warning(f'用户组页面读取失败: {type(error).__name__}，使用参考估算', client.account_name)
+        return None
+    if client._is_stopped():
+        return None
+    progress = parse_usergroup_progress(response.text)
+    if progress is None:
+        log_warning('用户组页面未解析到唯一有效的升级积分缺口，使用参考估算', client.account_name)
+    return progress
 
 
 class CreditsMixin:

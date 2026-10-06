@@ -5,6 +5,88 @@ from modules.gamemale_core.client import GamemaleAutomation
 
 
 class WorkflowTests(unittest.TestCase):
+    def test_usergroup_query_follows_final_exchange_and_uses_latest_blood(self):
+        from modules.gamemale_core.social import BlogInteractionResult
+        from tests.test_usergroup_progress import USERGROUP_HTML
+        client = self.make_client()
+        calls = []
+
+        def exchange():
+            calls.append('exchange')
+            return {'积分': '41', '血液': '466 滴'}, True
+
+        def read(method, url, **kwargs):
+            calls.append('usergroup')
+            return Mock(text=USERGROUP_HTML.replace('<b>17</b>', '<b>16</b>'))
+
+        client.get_user_credits_and_exchange = Mock(side_effect=exchange)
+        client._send_request = Mock(side_effect=read)
+        with patch('modules.gamemale_core.daily_tasks.interact_with_blogs',
+                   return_value=BlogInteractionResult(target=10, new_count=10)):
+            result = client.execute_all_tasks(collect_task_summary=False)
+        self.assertEqual(calls, ['exchange', 'usergroup'])
+        self.assertIn('还需 16 积分（用户组页面）', result.report)
+        self.assertIn('约需 544 滴血液；当前 466 滴，尚差 78 滴', result.report)
+        self.assertTrue(result.succeeded)
+
+    def test_failed_usergroup_read_falls_back_without_reusing_previous_gap(self):
+        import requests
+        from tests.test_usergroup_progress import USERGROUP_HTML
+        client = self.make_client({'run_mode': 'status'})
+        client._get_credits = Mock(return_value=({'积分': '40', '血液': '500 滴'}, 'unused'))
+        client._send_request = Mock(side_effect=[Mock(text=USERGROUP_HTML), requests.Timeout('offline')])
+        first = client.execute_all_tasks()
+        second = client.execute_all_tasks()
+        self.assertIn('还需 17 积分（用户组页面）', first.report)
+        self.assertIn('用户组页面未取得有效升级缺口，以下按参考门槛估算', second.report)
+        self.assertIn('还需 30 积分（门槛 70）', second.report)
+        self.assertNotIn('还需 17 积分', second.report)
+        self.assertTrue(second.succeeded)
+
+    def test_stop_during_usergroup_read_is_respected_and_only_online_does_not_read_it(self):
+        from modules.gamemale_core.stop_controller import StopController
+        from tests.test_usergroup_progress import USERGROUP_HTML
+        client = self.make_client({'run_mode': 'status'})
+        client._controller = StopController()
+
+        def read_then_stop(*args, **kwargs):
+            client._controller.request_stop()
+            return Mock(text=USERGROUP_HTML)
+
+        client._send_request = Mock(side_effect=read_then_stop)
+        result = client.execute_all_tasks()
+        self.assertTrue(result.stopped)
+        self.assertNotIn('（用户组页面）', result.report)
+        online = self.make_client({'only_online': True})
+        online.quick_accumulate_online_time = Mock(return_value=True)
+        online.execute_all_tasks()
+        online._send_request.assert_not_called()
+
+    def test_usergroup_cloudflare_failure_is_explicit_and_keeps_reference_fallback(self):
+        from modules.gamemale_core.cloudflare import CloudflareChallengeError
+        client = self.make_client({'run_mode': 'status'})
+        client._get_credits = Mock(return_value=({'积分': '40'}, 'unused'))
+        client._send_request = Mock(side_effect=CloudflareChallengeError('offline challenge'))
+        with patch('modules.gamemale_core.credits.log_error') as log_error:
+            result = client.execute_all_tasks()
+        self.assertIn('Cloudflare 验证未放行', log_error.call_args.args[0])
+        self.assertIn('用户组页面未取得有效升级缺口', result.report)
+        self.assertTrue(result.succeeded)
+
+    def test_status_uses_usergroup_page_with_safe_read_and_without_exchange(self):
+        from tests.test_usergroup_progress import USERGROUP_HTML
+        for mode in ('status', 'check'):
+            with self.subTest(mode=mode):
+                client = self.make_client({'run_mode': mode})
+                client._get_credits = Mock(return_value=({'积分': '40', '血液': '500 滴'}, 'unused'))
+                client._send_request = Mock(return_value=Mock(text=USERGROUP_HTML))
+                result = client.execute_all_tasks(collect_task_summary=False)
+                self.assertTrue(result.succeeded)
+                self.assertIn('还需 17 积分（用户组页面）', result.report)
+                self.assertIn('尚差 78 滴', result.report)
+                client._send_request.assert_called_once_with(
+                    'GET', 'https://www.gamemale.com/home.php?mod=spacecp&ac=usergroup', safe_to_retry=True)
+
     def test_disabled_task_summary_never_queries_statistics(self):
         from modules.gamemale_core.social import BlogInteractionResult
         client = self.make_client()
@@ -32,6 +114,7 @@ class WorkflowTests(unittest.TestCase):
                    return_value=BlogInteractionResult(target=10, new_count=10)):
             result = client.execute_all_tasks()
         client.get_daily_task_summary.assert_not_called()
+        client._send_request.assert_not_called()
         self.assertTrue(result.stopped)
         self.assertFalse(result.succeeded)
         self.assertEqual(result.assets_after, ())
@@ -132,7 +215,7 @@ class WorkflowTests(unittest.TestCase):
         client.is_logged_in = True
         client.formhash = 'placeholder'
         client._sleep = lambda _: None
-        client._send_request = Mock(side_effect=AssertionError('offline test must not access network'))
+        client._send_request = Mock(return_value=Mock(text='<span class="notice">积分下限 0</span>'))
         client._get_credits = lambda: ({'血液': '10 滴'}, 'https://www.gamemale.com/')
         client.get_daily_task_summary = lambda: []
         for method in ('quick_daily_sign', 'quick_daily_lottery', 'quick_accept_new_tasks',

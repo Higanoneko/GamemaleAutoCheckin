@@ -1,10 +1,18 @@
-"""Pure level and blood estimates using the Reference project's assumptions."""
+"""Immutable site progression data and pure Reference-based estimates."""
 
 from dataclasses import dataclass
 from typing import Optional, Tuple
 
 
 REFERENCE_LEVEL_THRESHOLDS = (0, 3, 10, 35, 70, 120, 200, 300, 450, 650, 900)
+BLOOD_PER_POINT = 34
+
+
+@dataclass(frozen=True)
+class UsergroupProgress:
+    points_needed: int
+    current_group: Optional[str] = None
+    target_group: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -22,7 +30,7 @@ class UpgradeEstimate:
 def estimate_upgrade(
     points: Optional[int], blood: Optional[int],
     thresholds: Tuple[int, ...] = REFERENCE_LEVEL_THRESHOLDS,
-    blood_per_point: int = 34,
+    blood_per_point: int = BLOOD_PER_POINT,
 ) -> Optional[UpgradeEstimate]:
     """缺失/非法积分不可当零；等级与血液换算只表达参考规则下的估算。"""
     if type(points) is not int or points < 0:

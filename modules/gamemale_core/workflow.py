@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Callable, Dict, List, Tuple, Union
 
 from .assets import parse_asset_snapshot
 from .constants import POKE_TARGET_COUNT
+from .credits import fetch_usergroup_progress
 from .logging_utils import log_error, log_info
 from .reports import build_detailed_report
 from .results import AccountRunResult, TaskResult
@@ -137,6 +138,7 @@ def execute_daily_workflow(
                 outcome = _run_action(client, step.name, actions[step.kind])
                 data = replace(data, tasks=data.tasks + (outcome,))
 
+    upgrade_progress = fetch_usergroup_progress(client) if data.credits and not client._is_stopped() else None
     stopped = client._is_stopped()
     if stopped and not any(task.status == 'stopped' for task in data.tasks):
         data = replace(data, tasks=data.tasks + (TaskResult('运行', 'stopped', '收到停止信号'),))
@@ -147,5 +149,6 @@ def execute_daily_workflow(
         mission_results=client.mission_results, online_time_summary=client.online_time_summary,
         assets_before=dict(data.before) if data.before or data.after else None,
         assets_after=dict(data.after) if data.before or data.after else None,
+        upgrade_progress=upgrade_progress,
     )
     return AccountRunResult(client.account_name, data.tasks, report, stopped, data.before, data.after)

@@ -4,6 +4,24 @@ from modules.gamemale_core.reports import build_asset_history_report, build_deta
 
 
 class ReportTests(unittest.TestCase):
+    def test_site_gap_overrides_reference_even_when_total_points_are_missing(self):
+        from modules.gamemale_core.parsers import parse_usergroup_progress
+        from tests.test_usergroup_progress import USERGROUP_HTML
+        progress = parse_usergroup_progress(USERGROUP_HTML)
+        for credits in ({'积分': '40', '血液': '500 滴'}, {'血液': '500 滴'}, {}):
+            with self.subTest(credits=credits):
+                report = build_detailed_report('offline', {}, user_credits=credits,
+                                               upgrade_progress=progress)
+                self.assertIn('当前用户组: Lvl. 3', report)
+                self.assertIn('距 Lvl. 4 还需 17 积分（用户组页面）', report)
+                self.assertIn('约需 578 滴血液', report)
+                self.assertNotIn('当前等级预估', report)
+                self.assertNotIn('门槛 70', report)
+                self.assertNotIn('按参考门槛', report)
+                self.assertIn('1 积分 ≈ 34 血液', report)
+        self.assertIn('尚差 78 滴', build_detailed_report(
+            'offline', {}, user_credits={'血液': '500 滴'}, upgrade_progress=progress))
+
     def test_malformed_points_do_not_produce_upgrade_predictions(self):
         from modules.gamemale_core.parsers import _parse_credit_list
         for value in ('1,2', '1e3', '1 e3'):

@@ -4,7 +4,7 @@
 from typing import Dict, List, Mapping, Optional, Sequence, Union
 
 from .assets import asset_deltas, parse_asset_snapshot
-from .progression import UpgradeEstimate, estimate_upgrade
+from .progression import BLOOD_PER_POINT, UpgradeEstimate, UsergroupProgress, estimate_upgrade
 from .results import TaskResult
 
 
@@ -17,26 +17,41 @@ def format_duration(seconds: int) -> str:
     return f"{hours:02d}:{minutes:02d}:{secs:02d}"
 
 
-def build_upgrade_report(estimate: Optional[UpgradeEstimate]) -> str:
-    """纯文本渲染，不承诺估算血液兑换后一定升级。"""
+def build_upgrade_report(
+    estimate: Optional[UpgradeEstimate], progress: Optional[UsergroupProgress] = None,
+    blood: Optional[int] = None,
+) -> str:
+    """优先显示页面积分缺口，血液需求始终标为换算估算。"""
     lines = ['升级预估:']
-    if estimate is None:
+    if progress is not None:
+        if progress.current_group:
+            lines.append(f'  - 当前用户组: {progress.current_group}')
+        target = progress.target_group or '页面所示用户组'
+        lines.append(f'  - 距 {target} 还需 {progress.points_needed} 积分（用户组页面）')
+        blood_per_point = BLOOD_PER_POINT
+        blood_needed = progress.points_needed * blood_per_point
+        current_blood = blood if type(blood) is int and blood >= 0 else None
+        blood_shortfall = max(0, blood_needed - current_blood) if current_blood is not None else None
+        footer = f'  - 积分缺口来自用户组页面；血液按 1 积分 ≈ {blood_per_point} 血液估算，实际以论坛为准'
+    elif estimate is None:
         return '\n'.join(lines + ['  - 未解析到有效积分，无法预估']) + '\n\n'
-    lines.append(f'  - 当前等级预估: Lvl. {estimate.current_level}')
-    if estimate.next_threshold is None:
-        lines.append('  - 已达到参考门槛表最高等级，无下一档预估')
     else:
+        lines.append('  - 用户组页面未取得有效升级缺口，以下按参考门槛估算')
+        lines.append(f'  - 当前等级预估: Lvl. {estimate.current_level}')
+        footer = f'  - 按参考门槛及 1 积分 ≈ {estimate.blood_per_point} 血液估算，实际以论坛为准'
+        if estimate.next_threshold is None:
+            return '\n'.join(lines + ['  - 已达到参考门槛表最高等级，无下一档预估', footer]) + '\n\n'
         lines.append(f'  - 距 Lvl. {estimate.current_level + 1} 还需 {estimate.points_needed} 积分'
                      f'（门槛 {estimate.next_threshold}）')
-        blood_line = f'  - 血液估算: 约需 {estimate.blood_needed} 滴血液'
-        if estimate.current_blood is None:
-            blood_line += '；当前血液未解析到'
-        elif estimate.blood_shortfall:
-            blood_line += f'；当前 {estimate.current_blood} 滴，尚差 {estimate.blood_shortfall} 滴'
-        else:
-            blood_line += f'；当前 {estimate.current_blood} 滴，按估算已足够'
-        lines.append(blood_line)
-    lines.append(f'  - 按参考门槛及 1 积分 ≈ {estimate.blood_per_point} 血液估算，实际以论坛为准')
+        blood_needed, current_blood, blood_shortfall = estimate.blood_needed, estimate.current_blood, estimate.blood_shortfall
+    blood_line = f'  - 血液估算: 约需 {blood_needed} 滴血液'
+    if current_blood is None:
+        blood_line += '；当前血液未解析到'
+    elif blood_shortfall:
+        blood_line += f'；当前 {current_blood} 滴，尚差 {blood_shortfall} 滴'
+    else:
+        blood_line += f'；当前 {current_blood} 滴，按估算已足够'
+    lines.extend([blood_line, footer])
     return '\n'.join(lines) + '\n\n'
 
 
@@ -50,6 +65,7 @@ def build_detailed_report(
     online_time_summary: Optional[Dict[str, object]] = None,
     assets_before: Optional[Mapping[str, int]] = None,
     assets_after: Optional[Mapping[str, int]] = None,
+    upgrade_progress: Optional[UsergroupProgress] = None,
 ) -> str:
     """生成详细的统计报告文本（纯函数）。"""
     message = f"【{account_name}】 Gamemale 每日任务完成统计\n\n"
@@ -59,8 +75,10 @@ def build_detailed_report(
         for name, value in user_credits.items():
             message += f"  - {name}: {value}\n"
         message += "\n"
-        snapshot = parse_asset_snapshot(user_credits)
-        message += build_upgrade_report(estimate_upgrade(snapshot.get('积分'), snapshot.get('血液')))
+    if user_credits or upgrade_progress is not None:
+        snapshot = parse_asset_snapshot(user_credits or {})
+        message += build_upgrade_report(estimate_upgrade(snapshot.get('积分'), snapshot.get('血液')),
+                                        upgrade_progress, snapshot.get('血液'))
 
     outcomes = [TaskResult(name, 'success' if result else 'failed') for name, result in task_results.items()] if isinstance(task_results, dict) else list(task_results)
     active = [result for result in outcomes if result.status != 'skipped']
