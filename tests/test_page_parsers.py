@@ -133,6 +133,13 @@ class LoginParserTests(unittest.TestCase):
 
 
 class CreditParserTests(unittest.TestCase):
+    def test_total_points_without_unit_and_zero_are_preserved(self):
+        html = '''<p>升级说明：积分: 9999</p><ul class="creditl">
+          <li><em>积分:</em> 0</li><li>血液：1,234 滴</li></ul>'''
+        self.assertEqual(_parse_credit_list(html), {'积分': '0', '血液': '1,234 滴'})
+        formula = '<ul class="creditl"><li>积分: 70 (总积分=旅程+追随/5+发帖数/10)</li></ul>'
+        self.assertEqual(_parse_credit_list(formula), {'积分': '70'})
+
     CREDIT_HTML = """
     <ul class="creditl">
       <li><em>血液</em>: 123 滴 (下周清零)</li>

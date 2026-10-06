@@ -5,6 +5,17 @@ from modules.gamemale_core.client import GamemaleAutomation
 
 
 class WorkflowTests(unittest.TestCase):
+    def test_disabled_task_summary_never_queries_statistics(self):
+        from modules.gamemale_core.social import BlogInteractionResult
+        client = self.make_client()
+        client.get_daily_task_summary = Mock(side_effect=AssertionError('QingLong must not query statistics'))
+        with patch('modules.gamemale_core.daily_tasks.interact_with_blogs',
+                   return_value=BlogInteractionResult(target=10, new_count=10)):
+            result = client.execute_all_tasks(collect_task_summary=False)
+        self.assertTrue(result.succeeded)
+        client.get_daily_task_summary.assert_not_called()
+        self.assertNotIn('任务总次数统计', result.report)
+
     def test_stop_during_exchange_prevents_summary_and_final_asset_success(self):
         from modules.gamemale_core.social import BlogInteractionResult
         from modules.gamemale_core.stop_controller import StopController

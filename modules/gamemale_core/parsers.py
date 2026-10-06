@@ -385,10 +385,10 @@ def _parse_credit_list(page_text: str) -> Dict[str, str]:
     credits_data: Dict[str, str] = {}
     for item in soup.select('ul.creditl li'):
         text = item.get_text(" ", strip=True)
-        match = re.match(r'(.+?):\s*([\d,]+\s*\S+)', text)
+        match = re.match(r'(.+?)[:：]\s*([\d,]+)(?![\d,.])(?:\s*([^\s()（）]+))?', text)
         if match:
-            name, value = match.groups()
-            value = re.sub(r'\s*[()]+\s*$', '', value.strip())
+            name, amount, unit = match.groups()
+            value = f'{amount} {unit}'.strip() if unit else amount
             credits_data[name.strip()] = value
     return credits_data
 

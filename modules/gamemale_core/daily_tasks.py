@@ -12,9 +12,9 @@ from .workflow import execute_daily_workflow
 
 
 class DailyTasksMixin:
-    def execute_all_tasks(self) -> AccountRunResult:
+    def execute_all_tasks(self, collect_task_summary: bool = True) -> AccountRunResult:
         """兼容客户端入口；流程由独立编排模块执行。"""
-        return execute_daily_workflow(self, interact_with_blogs)
+        return execute_daily_workflow(self, interact_with_blogs, collect_task_summary=collect_task_summary)
 
     def quick_daily_sign(self) -> TaskResult:
         """快速签到"""

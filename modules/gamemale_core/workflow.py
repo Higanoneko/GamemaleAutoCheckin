@@ -71,6 +71,7 @@ def _run_social_tasks(
 
 def _read_assets(
     client: 'GamemaleAutomation', step: PlannedTask, data: _WorkflowData,
+    collect_task_summary: bool,
 ) -> _WorkflowData:
     if step.kind == 'final_assets':
         credits, exchanged = client.get_user_credits_and_exchange()
@@ -78,7 +79,7 @@ def _read_assets(
         if client._is_stopped():
             return replace(data, tasks=data.tasks + (exchange_task, TaskResult('资产查询', 'stopped')))
         after = tuple(parse_asset_snapshot(credits).items())
-        summary = tuple(tuple(row.items()) for row in client.get_daily_task_summary())
+        summary = tuple(tuple(row.items()) for row in client.get_daily_task_summary()) if collect_task_summary else ()
         return replace(data, credits=tuple(credits.items()), after=after, summary=summary,
                        tasks=data.tasks + (exchange_task, TaskResult('资产查询', 'success' if after else 'failed')))
     try:
@@ -98,6 +99,7 @@ def _read_assets(
 def execute_daily_workflow(
     client: 'GamemaleAutomation',
     interact: Callable[['GamemaleAutomation', str], BlogInteractionResult],
+    collect_task_summary: bool = True,
 ) -> AccountRunResult:
     """注入客户端和互动实现；计划、结果和报告通过返回值连接。"""
     data = _WorkflowData()
@@ -128,7 +130,7 @@ def execute_daily_workflow(
             if not step.enabled:
                 data = replace(data, tasks=data.tasks + (TaskResult(step.name, 'skipped', step.skip_reason),))
             elif step.kind in ('initial_assets', 'status', 'final_assets'):
-                data = _read_assets(client, step, data)
+                data = _read_assets(client, step, data, collect_task_summary)
             elif step.kind == 'social':
                 data = replace(data, tasks=data.tasks + _run_social_tasks(client, interact))
             else:

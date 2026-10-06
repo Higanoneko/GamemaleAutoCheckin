@@ -13,6 +13,15 @@ from modules.gamemale_core.configuration import load_runtime_config, create_cook
 
 
 class ConfigurationTests(unittest.TestCase):
+    def test_qinglong_entrypoint_disables_task_summary_collection(self):
+        with patch('signal.signal'):
+            import gamemale_daily_ql
+        config = {'_source': 'APP_CONFIG_JSON', 'accounts': [{'cookie': 'auth=placeholder'}]}
+        with patch('sys.argv', ['program']), patch.object(gamemale_daily_ql, 'load_config', return_value=config), \
+                patch.object(gamemale_daily_ql, 'run_all_accounts', return_value=0) as run:
+            gamemale_daily_ql.main()
+        self.assertFalse(run.call_args.kwargs['collect_task_summary'])
+
     def test_cloudflare_diagnostics_match_client_normalization(self):
         from modules.gamemale_core.client import GamemaleAutomation
         from modules.gamemale_core.runtime import configuration_diagnostics

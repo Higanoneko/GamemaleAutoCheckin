@@ -180,6 +180,7 @@ def main() -> None:
         cloudflare_config=config.get("cloudflare"),
         asset_state_path=Path(__file__).parent / ".gamemale-state" / "assets.json",
         script_title="Gamemale 每日任务自动化脚本 - 青龙面板版",
+        collect_task_summary=False,
     )
     if failed > 0:
         sys.exit(1)

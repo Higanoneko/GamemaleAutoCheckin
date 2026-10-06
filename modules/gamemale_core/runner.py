@@ -27,6 +27,7 @@ def run_all_accounts(
     script_title: str = "Gamemale 每日任务自动化脚本",
     client_factory: Optional[Callable[..., GamemaleAutomation]] = None,
     asset_state_path: Optional[Path] = None,
+    collect_task_summary: bool = True,
 ) -> int:
     """
     多账户统一运行器。
@@ -40,6 +41,7 @@ def run_all_accounts(
             可为 None（此时仅使用环境变量兜底）；单个账户还可带同结构的局部
             cloudflare 块，局部非空字段优先于该全局块
         script_title: 脚本标题
+        collect_task_summary: 是否查询任务总次数；青龙入口禁用
 
     Returns:
         失败的账户数（0 = 全部成功）
@@ -84,7 +86,7 @@ def run_all_accounts(
                 result = AccountRunResult(account_name, (TaskResult("登录", "failed"),),
                                           f"【{account_name}】登录失败，请检查登录态、网络或验证配置\n")
             else:
-                result = client.execute_all_tasks()
+                result = client.execute_all_tasks(collect_task_summary=collect_task_summary)
                 if (asset_state_path is not None and isinstance(client.uid, int) and client.uid > 0
                         and not result.stopped and result.assets_after
                         and account_config.get('run_mode') != 'check'

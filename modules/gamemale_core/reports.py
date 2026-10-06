@@ -3,7 +3,8 @@
 
 from typing import Dict, List, Mapping, Optional, Sequence, Union
 
-from .assets import asset_deltas
+from .assets import asset_deltas, parse_asset_snapshot
+from .progression import UpgradeEstimate, estimate_upgrade
 from .results import TaskResult
 
 
@@ -14,6 +15,29 @@ def format_duration(seconds: int) -> str:
     minutes = (seconds % 3600) // 60
     secs = seconds % 60
     return f"{hours:02d}:{minutes:02d}:{secs:02d}"
+
+
+def build_upgrade_report(estimate: Optional[UpgradeEstimate]) -> str:
+    """纯文本渲染，不承诺估算血液兑换后一定升级。"""
+    lines = ['升级预估:']
+    if estimate is None:
+        return '\n'.join(lines + ['  - 未解析到有效积分，无法预估']) + '\n\n'
+    lines.append(f'  - 当前等级预估: Lvl. {estimate.current_level}')
+    if estimate.next_threshold is None:
+        lines.append('  - 已达到参考门槛表最高等级，无下一档预估')
+    else:
+        lines.append(f'  - 距 Lvl. {estimate.current_level + 1} 还需 {estimate.points_needed} 积分'
+                     f'（门槛 {estimate.next_threshold}）')
+        blood_line = f'  - 血液估算: 约需 {estimate.blood_needed} 滴血液'
+        if estimate.current_blood is None:
+            blood_line += '；当前血液未解析到'
+        elif estimate.blood_shortfall:
+            blood_line += f'；当前 {estimate.current_blood} 滴，尚差 {estimate.blood_shortfall} 滴'
+        else:
+            blood_line += f'；当前 {estimate.current_blood} 滴，按估算已足够'
+        lines.append(blood_line)
+    lines.append(f'  - 按参考门槛及 1 积分 ≈ {estimate.blood_per_point} 血液估算，实际以论坛为准')
+    return '\n'.join(lines) + '\n\n'
 
 
 def build_detailed_report(
@@ -35,6 +59,8 @@ def build_detailed_report(
         for name, value in user_credits.items():
             message += f"  - {name}: {value}\n"
         message += "\n"
+        snapshot = parse_asset_snapshot(user_credits)
+        message += build_upgrade_report(estimate_upgrade(snapshot.get('积分'), snapshot.get('血液')))
 
     outcomes = [TaskResult(name, 'success' if result else 'failed') for name, result in task_results.items()] if isinstance(task_results, dict) else list(task_results)
     active = [result for result in outcomes if result.status != 'skipped']
@@ -146,12 +172,23 @@ class ReportMixin:
 def build_asset_history_report(
     previous: Mapping[str, int], current: Mapping[str, int], sampled_at: Mapping[str, str],
 ) -> str:
-    """各字段使用其真实的上次采集时间，不标记为每日任务收益。"""
+    """差额按字段计算；上次采集时间在末行归纳，保留不同时间的归属。"""
     deltas = asset_deltas(previous, current)
     lines = ['较上次有效采集的资产变化:']
+    time_groups: Dict[str, List[str]] = {}
     for name, value in current.items():
         if name in deltas:
-            lines.append(f'  - {name}: {deltas[name]:+d}（上次: {sampled_at.get(name, "未知时间")}）')
+            lines.append(f'  - {name}: {deltas[name]:+d}')
+            recorded_time = sampled_at.get(name)
+            timestamp = recorded_time.strip() if isinstance(recorded_time, str) and recorded_time.strip() else '未知时间'
+            time_groups.setdefault(timestamp, []).append(name)
         else:
             lines.append(f'  - {name}: {value}（首次记录）')
+    if not time_groups:
+        time_summary = '无（首次记录）'
+    elif len(time_groups) == 1:
+        time_summary = next(iter(time_groups))
+    else:
+        time_summary = '；'.join(f'{timestamp}（{"、".join(names)}）' for timestamp, names in time_groups.items())
+    lines.append(f'上次记录时间: {time_summary}')
     return '\n'.join(lines) + '\n'
