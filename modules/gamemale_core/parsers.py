@@ -22,22 +22,22 @@ def parse_usergroup_progress(html_content: str) -> Optional[UsergroupProgress]:
         if re.search(r'display\s*:\s*none|visibility\s*:\s*hidden', str(element.get('style')), re.I):
             element.decompose()
     notices = soup.select('.tscr .notice') or soup.select('.notice')
-    gaps: List[int] = []
-    for notice in notices:
-        match = re.fullmatch(r'您升级到此用户组还需积分\s*[:：]?\s*([\d,]+)(?:\s*积分)?',
-                             notice.get_text(' ', strip=True))
-        if match:
-            try:
-                gaps.append(_parse_credit_value_int(match.group(1)))
-            except ValueError:
-                return None
-    if len(gaps) != 1:
+    texts = [notice.get_text(' ', strip=True) for notice in notices]
+    candidates = [text for text in texts if '您升级到此用户组还需积分' in text]
+    if len(candidates) != 1:
+        return None
+    match = re.fullmatch(r'您升级到此用户组还需积分\s*[:：]?\s*([\d,]+)(?:\s*积分)?', candidates[0])
+    if not match:
+        return None
+    try:
+        points_needed = _parse_credit_value_int(match.group(1))
+    except ValueError:
         return None
     current = soup.select_one('.tdat .c0 h4')
     target = soup.select_one('#tba #c2')
     current_match = re.fullmatch(r'我的主用户组\s*[-－–—:：]\s*(.+)', current.get_text(' ', strip=True)) if current else None
     target_match = re.fullmatch(r'(?:晋级|升级)用户组\s*[-－–—:：]\s*(.+)', target.get_text(' ', strip=True)) if target else None
-    return UsergroupProgress(gaps[0], current_match.group(1) if current_match else None,
+    return UsergroupProgress(points_needed, current_match.group(1) if current_match else None,
                              target_match.group(1) if target_match else None)
 
 

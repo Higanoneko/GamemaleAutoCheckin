@@ -31,6 +31,11 @@ class UsergroupProgressTests(unittest.TestCase):
             with self.subTest(html=html):
                 self.assertIsNone(parse_usergroup_progress(html))
 
+    def test_valid_gap_with_another_malformed_notice_is_ambiguous(self):
+        html = USERGROUP_HTML.replace(
+            '</span>', '</span><span class="notice">您升级到此用户组还需积分 1.5</span>')
+        self.assertIsNone(parse_usergroup_progress(html))
+
     def test_hidden_notices_and_script_text_do_not_override_visible_gap(self):
         hidden = '''
         <script>var message = "您升级到此用户组还需积分 999";</script>
