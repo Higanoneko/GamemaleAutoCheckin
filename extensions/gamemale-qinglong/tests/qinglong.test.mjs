@@ -26,7 +26,9 @@ test('panel address supports proxy prefixes and trailing API paths', () => {
     'https://ql.example.com/prefix/api']) {
     assert.deepEqual(normalizePanelUrl(raw), {base: connection.base, originPattern: 'https://ql.example.com/*'});
   }
-  assert.equal(normalizePanelUrl('http://127.0.0.1:5700').base, 'http://127.0.0.1:5700/open');
+  assert.deepEqual(normalizePanelUrl('http://127.0.0.1:5700'), {
+    base: 'http://127.0.0.1:5700/open', originPattern: 'http://127.0.0.1/*',
+  });
   for (const raw of ['ql.example.com', 'file:///tmp/config', 'https://user:pass@ql.example.com',
     'https://ql.example.com/?secret=placeholder', 'https://ql.example.com/#hash']) assert.throws(() => normalizePanelUrl(raw));
 });

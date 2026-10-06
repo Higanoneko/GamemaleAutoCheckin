@@ -98,7 +98,7 @@ accounts:
 
 完整可选字段见 [ql_config.example.yaml](ql_config.example.yaml)。Cookie、密码和 API Key 只填在自己的配置中，不要公开上传。
 
-**用浏览器扩展自动生成配置**：本仓库提供独立的 [GameMale 青龙配置助手](extensions/gamemale-qinglong/README.md)。在 Chrome / Edge 的扩展管理中开启开发者模式，加载 `extensions/gamemale-qinglong` 文件夹，在同一浏览器登录论坛后打开助手：
+**用浏览器扩展自动生成配置**：本仓库提供独立的 [GameMale 青龙配置助手](extensions/gamemale-qinglong/README.md)。在 Chrome / Edge 的扩展管理中开启开发者模式，加载 `extensions/gamemale-qinglong` 文件夹；Firefox 140+ 使用单独的 Firefox 包（临时加载及签名安装方式见扩展说明）。在同一浏览器登录论坛后打开助手：
 
 - **读取并复制完整 YAML**：自动读取包含 HttpOnly 的完整 Cookie，复制后直接粘贴到 `GameMale_Config.yaml`。已有多账户配置时用 **读取并复制账户片段**，追加到现有 `accounts:` 下。
 - **API 合并写入**：先去 **青龙面板 → 设置 → 系统设置 → 应用设置** 创建 API Key（添加应用），**至少包含「配置文件」权限**。把获取的 **Client ID** 和 **Client Secret** 连同面板地址填入助手，连接并读取配置，选择新增或更新账户，生成合并预览后写入。其他账户和未展示的配置字段会保留；保存会重新排版 YAML，注释不保留。

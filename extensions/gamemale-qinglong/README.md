@@ -1,13 +1,41 @@
 # GameMale 青龙配置助手
 
-独立的 Chrome / Edge Manifest V3 扩展，参考 `Reference/GM-All-In-One` 文档中 GM Cookie Helper 的“读取 Cookie → 配置向导”流程，为本仓库的青龙入口构建配置。这里使用独立实现，不包含 GitHub 部署流程。
+独立的 Chrome / Edge / Firefox 桌面版 Manifest V3 扩展，参考 `Reference/GM-All-In-One` 文档中 GM Cookie Helper 的“读取 Cookie → 配置向导”流程，为本仓库的青龙入口构建配置。这里使用独立实现，不包含 GitHub 部署流程。
 
 ## 安装
+
+### Chrome / Edge
 
 1. 下载并解压本仓库，保留 `extensions/gamemale-qinglong` 文件夹。
 2. 在 Chrome 打开 `chrome://extensions`，或在 Edge 打开 `edge://extensions`。
 3. 启用「开发者模式」，点击「加载已解压的扩展程序」，选择该文件夹（里面有 `manifest.json`）。
 4. 点击扩展图标 → **打开配置助手**。配置页在独立标签页打开，便于填写与预览。
+
+### Firefox 140+
+
+使用单独生成的 **`gamemale-qinglong-firefox.zip`**，包含 Firefox 扩展 ID、最低版本及认证信息 / 网站内容的数据传输声明。扩展只向用户填写的青龙面板发送数据，详见 [数据说明](PRIVACY.md)。
+
+当前提供未签名的测试包，可以按 Mozilla 的 [临时安装说明](https://extensionworkshop.com/documentation/develop/temporary-installation-in-firefox/) 使用：
+
+1. 在 Firefox 地址栏打开 `about:debugging#/runtime/this-firefox`。
+2. 点击 **临时载入附加组件**，选择 `gamemale-qinglong-firefox.zip`；也可以先解压，选择解压目录中的 `manifest.json`。
+3. 从浏览器工具栏的扩展菜单打开 **GameMale 青龙配置助手**，在同一 Firefox 默认容器中登录论坛，再读取 Cookie。读取时如出现站点访问权限提示，请允许访问 GameMale。
+4. 功能与 Chrome / Edge 相同：复制完整 YAML / 账户片段，或连接青龙 API 合并写入。
+
+**临时扩展在 Firefox 重启后会移除。** 普通正式版 Firefox 的长期安装需要 Mozilla 签名；仅把 ZIP 改名为 XPI 不能完成签名。可以将这个包提交到 [AMO 开发者中心](https://addons.mozilla.org/developers/) 的自分发（unlisted）渠道，拿到签名后的 XPI，再在 `about:addons` 中通过「从文件安装附加组件」安装。见 [Mozilla 签名说明](https://extensionworkshop.com/documentation/publish/signing-and-distribution-overview/)。
+
+Firefox 版的最低版本为 140，以使用 Mozilla 的 [内置数据传输同意机制](https://extensionworkshop.com/documentation/develop/firefox-builtin-data-consent/)。站点权限匹配不包含端口以兼容 Firefox，实际 API 请求仍使用输入的面板端口。当前不支持选择 Firefox 多账户容器或隐私窗口的 Cookie。
+
+### 重新打包
+
+在仓库根目录运行，无需安装 Python 第三方依赖：
+
+```bash
+python extensions/gamemale-qinglong/build.py
+python extensions/gamemale-qinglong/build.py --browser firefox
+```
+
+默认在 `dist` 下生成 `gamemale-qinglong.zip`（Chrome / Edge）和 `gamemale-qinglong-firefox.zip`。两个包共享功能代码，只在 Firefox 包内生成专用 `manifest.json`；源码目录的清单仍用于 Chrome / Edge。打包采用明确的文件名单，不包含测试、打包脚本或本地账户配置。
 
 ## 复制配置（不需要 API Key）
 

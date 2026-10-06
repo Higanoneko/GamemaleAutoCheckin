@@ -12,7 +12,8 @@ export function normalizePanelUrl(raw) {
     throw new Error('青龙地址只支持 HTTP/HTTPS，不能包含登录信息、查询参数或片段。');
   }
   const path = url.pathname.replace(/\/+$/, '').replace(/\/(?:open|api)$/, '');
-  return {base: `${url.origin}${path}/open`, originPattern: `${url.origin}/*`};
+  // Firefox match patterns cannot include ports. The HTTP endpoint still keeps its port.
+  return {base: `${url.origin}${path}/open`, originPattern: `${url.protocol}//${url.hostname}/*`};
 }
 
 export class QinglongError extends Error {

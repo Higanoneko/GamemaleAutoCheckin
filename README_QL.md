@@ -6,7 +6,7 @@
 
 本仓库提供独立的 [GameMale 青龙配置助手](extensions/gamemale-qinglong/README.md)，为本项目生成 **`GameMale_Config.yaml`**，支持手动复制和 API 自动写入两种方式。
 
-1. 在 Chrome / Edge 扩展管理页面开启「开发者模式」，加载 `extensions/gamemale-qinglong` 文件夹。
+1. 在 Chrome / Edge 扩展管理页面开启「开发者模式」，加载 `extensions/gamemale-qinglong` 文件夹；Firefox 140+ 使用专用 Firefox 包，安装方式见 [扩展说明](extensions/gamemale-qinglong/README.md#firefox-140)。
 2. 在同一浏览器登录 [GameMale](https://www.gamemale.com/)，完成验证，点击扩展图标打开助手。
 3. 点击 **读取并复制完整 YAML**，将生成内容粘贴进青龙「配置文件」中的 **`GameMale_Config.yaml`**。文件尚不存在时先运行一次青龙脚本创建模板。
 4. 已有多账户配置时点击 **读取并复制账户片段**，追加到现有 `accounts:` 下。新账户默认关闭血液兑换，需要兑换时填写论坛密码并启用开关。

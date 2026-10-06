@@ -1,6 +1,9 @@
-import {CONFIG_NAME, SITE_URL, serializeCookies, buildAccount, parseConfig, renderConfig,
+import {CONFIG_NAME, serializeCookies, buildAccount, parseConfig, renderConfig,
   renderAccountFragment, mergeAccount, configBool} from './lib/config.mjs';
 import {normalizePanelUrl, authenticate, readConfig, saveConfig} from './lib/qinglong.mjs';
+import {getExtensionApi, readForumCookies} from './lib/browser-api.mjs';
+
+const extensionApi = getExtensionApi(globalThis);
 
 /** @param {string} id @returns {any} */
 const element = (id) => document.getElementById(id);
@@ -79,7 +82,7 @@ function accountPatch() {
 /** @returns {Promise<void>} */
 async function collectCookie() {
   cookie = ''; invalidate();
-  const result = serializeCookies(await chrome.cookies.getAll({url: SITE_URL}));
+  const result = serializeCookies(await readForumCookies(extensionApi));
   if (!result.hasAuth) {
     element('cookie-status').textContent = '未发现非空 auth Cookie，请在此浏览器登录论坛后重新读取。';
     throw new Error('未发现登录 auth Cookie。仅有 saltkey 或 cf_clearance 不代表已登录。');
@@ -132,7 +135,7 @@ element('connect').addEventListener('click', () => run(async () => {
     throw new Error('请填写 Client ID 和 Client Secret。');
   }
   // Invoke request before any asynchronous work to preserve the browser user gesture.
-  const allowed = await chrome.permissions.request({origins: [originPattern]});
+  const allowed = await extensionApi.permissions.request({origins: [originPattern]});
   if (!allowed) throw new Error('未授予面板访问权限；仍可使用复制配置功能。');
   status('正在认证并读取青龙配置…');
   const authenticated = await authenticate(fetch, base, element('client-id').value, element('client-secret').value);
