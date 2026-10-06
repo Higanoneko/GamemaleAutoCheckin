@@ -386,4 +386,6 @@ python -m unittest discover -s tests
 
 静态类型检查覆盖解析、配置、结果、报告与资产逻辑边界；既有会话 mixin 尚未全部纳入。PR 检查不加载论坛凭据，离线测试使用内联 HTML 和假会话。直接依赖版本已锁定；OCR 作为独立可选依赖。
 
+日常流程遵循函数式优先与模块化：`task_plan.py` 根据不可变选项纯计算任务顺序，`workflow.py` 注入客户端和互动函数执行 IO，并通过不可变运行数据组合结果；`daily_tasks.py` 保留客户端兼容入口以及签到、抽奖请求动作。计划模块不依赖会话、日志或时间，编排模块不解析 HTML，也不为中间结果新增实例属性。新增功能应放入对应职责模块，通过返回值组合。
+
 直接调用客户端的集成代码请使用新的结果接口：`execute_all_tasks()` 返回 `AccountRunResult`，通过 `.report` 读取报告、通过 `.succeeded` 判断账户结果；`quick_daily_sign()` 与 `quick_daily_lottery()` 返回 `TaskResult`，可读取 `.status` 和 `.message`。单项结果仍支持布尔判断，失败、未知、停止均为假。兑换提交结果不确定或提交后余额刷新失败时，不使用兑换前余额计算末尾差额或更新资产历史。

@@ -5,6 +5,51 @@ from modules.gamemale_core.client import GamemaleAutomation
 
 
 class WorkflowTests(unittest.TestCase):
+    def test_successive_status_runs_keep_independent_asset_results(self):
+        client = self.make_client({'run_mode': 'status'})
+        client._get_credits = Mock(side_effect=[
+            ({'血液': '10 滴'}, 'https://www.gamemale.com/'),
+            ({'血液': '12 滴'}, 'https://www.gamemale.com/'),
+        ])
+        first = client.execute_all_tasks()
+        second = client.execute_all_tasks()
+        self.assertEqual(first.assets_after, (('血液', 10),))
+        self.assertEqual(second.assets_after, (('血液', 12),))
+        self.assertEqual(len(first.tasks), 2)
+        self.assertEqual(len(second.tasks), 2)
+
+    def test_stop_after_sign_prevents_later_actions_and_asset_queries(self):
+        from modules.gamemale_core.stop_controller import StopController
+        client = self.make_client()
+        client._controller = StopController()
+        client._get_credits = Mock(return_value=({'血液': '10 滴'}, 'https://www.gamemale.com/'))
+        client.quick_daily_sign.side_effect = lambda: client._controller.request_stop() or True
+        with patch('modules.gamemale_core.daily_tasks.interact_with_blogs',
+                   side_effect=AssertionError('stopped workflow must not interact')):
+            result = client.execute_all_tasks()
+        self.assertTrue(result.stopped)
+        self.assertFalse(result.succeeded)
+        client.quick_daily_lottery.assert_not_called()
+        client.quick_complete_doing_missions.assert_not_called()
+        client._get_credits.assert_called_once()
+        self.assertEqual(result.assets_after, ())
+
+    def test_disabled_aliases_remain_skipped_without_mutating_configuration(self):
+        from copy import deepcopy
+        from modules.gamemale_core.social import BlogInteractionResult
+        client = self.make_client({'auto_task_accept_enabled': '关闭', 'auto_draw_tasks': 'false'})
+        original = deepcopy(client.config)
+        with patch('modules.gamemale_core.daily_tasks.interact_with_blogs',
+                   return_value=BlogInteractionResult(target=10, new_count=10)):
+            result = client.execute_all_tasks()
+        self.assertTrue(result.succeeded)
+        self.assertEqual(client.config, original)
+        client.quick_accept_new_tasks.assert_not_called()
+        client.quick_complete_doing_missions.assert_not_called()
+        statuses = {task.name: task.status for task in result.tasks}
+        self.assertEqual(statuses['接取新任务'], 'skipped')
+        self.assertEqual(statuses['完成任务'], 'skipped')
+
     def test_uncertain_exchange_submission_discards_pre_exchange_balance(self):
         import requests
         client = self.make_client({'password': 'placeholder', 'auto_exchange': True})
