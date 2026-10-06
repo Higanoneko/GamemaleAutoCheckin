@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "GameMale 青龙配置助手",
+  "version": "1.0.0",
+  "description": "读取 GameMale Cookie，复制青龙 YAML 配置，或通过青龙 OpenAPI 合并写入账户。",
+  "permissions": ["cookies", "clipboardWrite"],
+  "host_permissions": ["https://www.gamemale.com/*", "https://gamemale.com/*"],
+  "optional_host_permissions": ["http://*/*", "https://*/*"],
+  "action": {"default_popup": "popup.html", "default_title": "GameMale 青龙配置助手"},
+  "content_security_policy": {"extension_pages": "script-src 'self'; object-src 'none'"}
+}

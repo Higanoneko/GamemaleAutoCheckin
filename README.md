@@ -32,7 +32,7 @@
 | 定时类型 | `crontab` | 按 Cron 表达式更新订阅 |
 | 定时规则 | `0 4 * * *` | 每天 04:00 更新脚本，以面板时区为准；签到时间另设 |
 | 白名单 | **留空** | 按截图不额外限制，配合下方黑名单筛选 |
-| 黑名单 | `gamemale_daily.py\|modules\|test_login_helpers.py\|tests` | 排除普通入口、模块和测试文件，避免当成签到任务导入 |
+| 黑名单 | `gamemale_daily.py\|modules\|test_login_helpers.py\|tests\|extensions` | 排除普通入口、模块、测试及浏览器扩展，避免当成签到任务导入 |
 | 依赖文件 | `modules\|tests` | 按截图复制目录；日常运行必需的是 `modules`，`tests` 可保留作离线检查 |
 | 文件后缀 | **留空** | 按截图使用面板默认后缀筛选 |
 
@@ -41,17 +41,10 @@
 | 字段 | 作用 | 示例与结果 |
 | --- | --- | --- |
 | 白名单 | 只选择路径匹配的脚本 | 填 `gamemale_daily_ql`，只选择青龙入口；留空则不做这层限制 |
-| 黑名单 | 从候选脚本中排除匹配项 | 填 `gamemale_daily.py\|modules\|test_login_helpers.py\|tests`，保留青龙入口，排除普通入口及辅助文件 |
+| 黑名单 | 从候选脚本中排除匹配项 | 填 `gamemale_daily.py\|modules\|test_login_helpers.py\|tests\|extensions`，保留青龙入口，排除普通入口及辅助文件 |
 | 依赖文件 | 把所需文件或目录复制到脚本目录，不受黑名单影响 | `modules\|tests` 让这些目录可被使用，同时不作为日常任务导入 |
 
 `modules` 同时出现在黑名单和依赖文件中是正常配置：它需要被复制供入口导入，但不需要单独执行。这里的关键词用于筛选仓库文件，和下文排除论坛任务的 `task_exclude_*` 无关。筛选规则见[青龙官方说明](https://qinglong.online/guide/user-guide/basic-explanation)。
-
-<details>
-<summary>查看订阅填写截图</summary>
-
-<p><img src="assets/image/qinglong-subscription.png" alt="青龙订阅编辑截图，展示黑名单及依赖文件的填写位置" width="520"></p>
-
-</details>
 
 订阅完成后，到 **定时任务** 搜索 `GameMale 自动签到`，确认执行入口是 **`gamemale_daily_ql.py`**。如果以前已导入普通入口或测试任务，禁用或删除这些旧任务，避免重复运行。
 
@@ -105,6 +98,13 @@ accounts:
 
 完整可选字段见 [ql_config.example.yaml](ql_config.example.yaml)。Cookie、密码和 API Key 只填在自己的配置中，不要公开上传。
 
+**用浏览器扩展自动生成配置**：本仓库提供独立的 [GameMale 青龙配置助手](extensions/gamemale-qinglong/README.md)。在 Chrome / Edge 的扩展管理中开启开发者模式，加载 `extensions/gamemale-qinglong` 文件夹，在同一浏览器登录论坛后打开助手：
+
+- **读取并复制完整 YAML**：自动读取包含 HttpOnly 的完整 Cookie，复制后直接粘贴到 `GameMale_Config.yaml`。已有多账户配置时用 **读取并复制账户片段**，追加到现有 `accounts:` 下。
+- **API 合并写入**：先去 **青龙面板 → 设置 → 系统设置 → 应用设置** 创建 API Key（添加应用），**至少包含「配置文件」权限**。把获取的 **Client ID** 和 **Client Secret** 连同面板地址填入助手，连接并读取配置，选择新增或更新账户，生成合并预览后写入。其他账户和未展示的配置字段会保留；保存会重新排版 YAML，注释不保留。
+
+Client ID / Client Secret 用于访问面板，不写入签到配置。凭据只保留在助手页面内存中，关闭或刷新即清空。API 创建配置后可以直接进入下一步自检，无需先运行脚本创建模板。
+
 ### 4. 自检并设置签到时间
 
 编辑自动创建的定时任务，**保留面板生成的脚本路径**。下面以截图中的订阅唯一值为例；实际目录不同时，用你的路径替换。
@@ -137,6 +137,8 @@ task Higanoneko_GamemaleAutoCheckin/gamemale_daily_ql.py
 在青龙面板中配置好自带的通知渠道，并保持账户 `notify_enabled: true`。签到结果会使用青龙原生通知发送；此入口不需要填写单独的 `notification` 配置。
 
 ## 获取 Cookie
+
+推荐使用 [青龙配置助手](extensions/gamemale-qinglong/README.md)，登录后点击 **读取并复制完整 YAML** 即可。也可手动获取：
 
 1. 在电脑浏览器打开 [GameMale](https://www.gamemale.com)，完成验证并登录。
 2. 按 **F12**，切换到 **Network / 网络**。

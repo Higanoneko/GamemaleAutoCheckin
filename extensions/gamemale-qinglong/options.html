@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GameMale 青龙配置助手</title><link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+  <header><p class="eyebrow">GAMEMALE / QINGLONG</p><h1>把浏览器登录态带到青龙</h1>
+    <p>复制可直接粘贴的配置，或连接面板合并写入 <code>GameMale_Config.yaml</code>。</p></header>
+  <div id="status" role="status" aria-live="polite">先在此浏览器登录 GameMale，然后读取 Cookie。</div>
+  <section aria-labelledby="account-title">
+    <h2 id="account-title">1. 读取 Cookie，填写账户</h2>
+    <div class="actions"><a href="https://www.gamemale.com/" target="_blank" rel="noreferrer">打开论坛登录 ↗</a>
+      <button id="read-cookie" type="button">读取 Cookie</button>
+      <button id="quick-copy" type="button">读取并复制完整 YAML</button>
+      <button id="quick-fragment" type="button">读取并复制账户片段</button></div>
+    <p id="cookie-status">尚未读取 Cookie。读取包含 HttpOnly 的完整 Cookie；仅检查 auth 标识，实际登录请运行脚本自检。</p>
+    <div class="grid">
+      <label>论坛用户名<input id="username" autocomplete="off" placeholder="建议填写，便于辨认账户"></label>
+      <label>论坛密码（可选）<input id="password" type="password" autocomplete="off" placeholder="更新账户时留空保留原密码"></label>
+      <label>安全问题<select id="questionid"><option value="">更新时保留原值 / 新账户无安全问题</option>
+        <option value="0">0 · 无安全问题</option><option value="1">1 · 母亲的名字</option>
+        <option value="2">2 · 爷爷的名字</option><option value="3">3 · 父亲出生的城市</option>
+        <option value="4">4 · 您其中一位老师的名字</option><option value="5">5 · 您个人计算机的型号</option>
+        <option value="6">6 · 您最喜欢的餐馆名称</option><option value="7">7 · 驾驶执照最后四位数字</option></select></label>
+      <label>安全问题答案（可选）<input id="answer" type="password" autocomplete="off" placeholder="更新时留空保留原答案"></label>
+    </div>
+    <div class="checks">
+      <label><input id="notify" type="checkbox" checked>发送青龙通知</label>
+      <label><input id="exchange" type="checkbox">自动兑换血液（需要论坛密码）</label>
+      <label><input id="accept" type="checkbox" checked>自动接取任务</label>
+      <label><input id="complete" type="checkbox" checked>自动领取任务奖励</label>
+    </div>
+    <div class="actions"><button id="generate" type="button">生成完整 YAML</button>
+      <button id="copy-full" type="button" disabled>复制完整配置</button>
+      <button id="copy-fragment" type="button" disabled>复制账户片段</button></div>
+    <p class="hint">完整配置适合首次配置；账户片段粘贴到已有 <code>accounts:</code> 列表下，不要再添加一个 accounts。API 更新时保留其他账户和未展示的设置。</p>
+  </section>
+  <section aria-labelledby="api-title">
+    <h2 id="api-title">2. 连接青龙面板（可选）</h2>
+    <p class="guide">先去 <strong>青龙面板 → 设置 → 系统设置 → 应用设置</strong> 创建 API Key（添加应用），
+      <strong>至少勾选「配置文件」权限</strong>。将获得的 <strong>Client ID</strong> 和 <strong>Client Secret</strong> 填入下方，用于自动构建并写入配置文件。</p>
+    <div class="grid">
+      <label class="wide">青龙面板地址<input id="panel-url" type="url" autocomplete="off" placeholder="https://ql.example.com 或 http://192.168.1.10:5700"></label>
+      <label>Client ID<input id="client-id" autocomplete="off"></label>
+      <label>Client Secret<input id="client-secret" type="password" autocomplete="off"></label>
+    </div>
+    <p class="hint">可包含反向代理前缀，如 https://example.com/qinglong。连接时浏览器会请求访问该面板的权限。公网连接建议使用 HTTPS。</p>
+    <div class="actions"><button id="connect" type="button">连接并读取现有配置</button></div>
+    <label>写入目标<select id="target" disabled><option value="new">新增账户</option></select></label>
+    <div class="actions"><button id="merge" type="button" disabled>生成合并预览</button>
+      <button id="save" class="primary" type="button" disabled>将预览写入青龙</button></div>
+    <p class="hint">写入前先检查下面的完整预览；保存会重新排版 YAML，注释不保留。更新账户时，用户名、密码和答案留空会保留原值。先备份已有配置；面板若已被修改，需要重新读取。</p>
+  </section>
+  <section aria-labelledby="preview-title">
+    <h2 id="preview-title">3. 配置预览</h2>
+    <p id="preview-label">尚未生成配置。预览和剪贴板含登录凭据，请勿分享。</p>
+    <textarea id="preview" readonly spellcheck="false" aria-label="YAML 配置预览"></textarea>
+    <p>写入后回青龙运行 <code>gamemale_daily_ql.py --check-config</code>，再用 <code>--check</code> 检查登录。
+      青龙 task 命令中在脚本参数前加 <code>--</code>。通知继续使用面板通知配置。</p>
+  </section>
+  <footer>Cookie、论坛密码、Client Secret 和令牌仅保留在当前页面内存中，关闭或刷新即清空。
+    <button id="clear" type="button">清空当前页面凭据与预览</button></footer>
+</main>
+<script type="module" src="options.mjs"></script>
+</body>
+</html>
