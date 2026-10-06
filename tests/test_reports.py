@@ -4,6 +4,15 @@ from modules.gamemale_core.reports import build_asset_history_report, build_deta
 
 
 class ReportTests(unittest.TestCase):
+    def test_malformed_points_do_not_produce_upgrade_predictions(self):
+        from modules.gamemale_core.parsers import _parse_credit_list
+        for value in ('1,2', '1e3', '1 e3'):
+            with self.subTest(value=value):
+                credits = _parse_credit_list(f'<ul class="creditl"><li>积分: {value}</li><li>血液: 800 滴</li></ul>')
+                report = build_detailed_report('offline', {}, user_credits=credits)
+                self.assertIn('未解析到有效积分，无法预估', report)
+                self.assertNotIn('当前等级预估', report)
+
     def test_threshold_boundaries_missing_values_and_reference_maximum(self):
         at_threshold = build_detailed_report('offline', {}, user_credits={'积分': '70', '血液': '1,700 滴'})
         self.assertIn('当前等级预估: Lvl. 4', at_threshold)

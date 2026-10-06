@@ -389,6 +389,10 @@ def _parse_credit_list(page_text: str) -> Dict[str, str]:
         if match:
             name, amount, unit = match.groups()
             value = f'{amount} {unit}'.strip() if unit else amount
+            try:
+                _parse_credit_value_int(value)
+            except ValueError:
+                continue
             credits_data[name.strip()] = value
     return credits_data
 
@@ -400,8 +404,12 @@ def _extract_credit_exchange_error(response_text: str) -> Optional[str]:
 
 
 def _parse_credit_value_int(credit_value: str) -> int:
-    """把“xx 单位”形态的积分值解析为整数（默认形态 “0 滴”）。"""
-    return int(credit_value.split()[0].replace(',', ''))
+    """读取整数或合法千位格式；非法数字不能作为有效余额。"""
+    parts = credit_value.split()
+    if (not parts or not re.fullmatch(r'[+-]?(?:\d+|\d{1,3}(?:,\d{3})+)', parts[0])
+            or (len(parts) > 1 and re.match(r'[eE][+-]?\d', parts[1]))):
+        raise ValueError('积分值必须为整数或合法千位格式')
+    return int(parts[0].replace(',', ''))
 
 
 def _parse_task_usage_table(page_text: str) -> List[Dict[str, str]]:
