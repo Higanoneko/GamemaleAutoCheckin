@@ -74,8 +74,10 @@ def _read_assets(
 ) -> _WorkflowData:
     if step.kind == 'final_assets':
         credits, exchanged = client.get_user_credits_and_exchange()
-        after = tuple(parse_asset_snapshot(credits).items())
         exchange_task = TaskResult('血液兑换', 'skipped' if exchanged is None else 'success' if exchanged else 'failed')
+        if client._is_stopped():
+            return replace(data, tasks=data.tasks + (exchange_task, TaskResult('资产查询', 'stopped')))
+        after = tuple(parse_asset_snapshot(credits).items())
         summary = tuple(tuple(row.items()) for row in client.get_daily_task_summary())
         return replace(data, credits=tuple(credits.items()), after=after, summary=summary,
                        tasks=data.tasks + (exchange_task, TaskResult('资产查询', 'success' if after else 'failed')))

@@ -5,6 +5,29 @@ from modules.gamemale_core.client import GamemaleAutomation
 
 
 class WorkflowTests(unittest.TestCase):
+    def test_stop_during_exchange_prevents_summary_and_final_asset_success(self):
+        from modules.gamemale_core.social import BlogInteractionResult
+        from modules.gamemale_core.stop_controller import StopController
+        client = self.make_client()
+        client._controller = StopController()
+
+        def exchange_then_stop():
+            client._controller.request_stop()
+            return {'血液': '10 滴'}, True
+
+        client.get_user_credits_and_exchange = Mock(side_effect=exchange_then_stop)
+        client.get_daily_task_summary = Mock(side_effect=AssertionError('must not query after stop'))
+        with patch('modules.gamemale_core.daily_tasks.interact_with_blogs',
+                   return_value=BlogInteractionResult(target=10, new_count=10)):
+            result = client.execute_all_tasks()
+        client.get_daily_task_summary.assert_not_called()
+        self.assertTrue(result.stopped)
+        self.assertFalse(result.succeeded)
+        self.assertEqual(result.assets_after, ())
+        statuses = {task.name: task.status for task in result.tasks}
+        self.assertEqual(statuses['血液兑换'], 'success')
+        self.assertEqual(statuses['资产查询'], 'stopped')
+
     def test_successive_status_runs_keep_independent_asset_results(self):
         client = self.make_client({'run_mode': 'status'})
         client._get_credits = Mock(side_effect=[
